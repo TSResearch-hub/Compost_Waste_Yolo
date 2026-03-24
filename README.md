@@ -40,9 +40,11 @@ Il existe des données annotées en open source, mais elles ne correspondent pas
 
 
 
-## Il faut annoter des données  
+### Il faut annoter des données dans des conditions cibles (boîtes englobantes, classes)
+Cela prend beaucoup de temps. 
 
-### Premier livrable : conception d’un outil d’annotation de données avec IA intégrée  
+
+## Premier livrable : conception d’un outil d’annotation de données avec IA intégrée  
 
 Nous utilisons des données open source pour entraîner une première version de notre IA.  
 Puis, nous utilisons cette IA pour nous aider à annoter de nouvelles images.  
