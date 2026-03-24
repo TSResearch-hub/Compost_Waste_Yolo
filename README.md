@@ -5,8 +5,7 @@ Courte description de ton projet.
 
 ## 📸 Aperçu
 
-<img src="./images/compost_bin.png" width="500"/>
-![Compost Bin](./images/compost_bin.png)
+<img src="./images/compost_bin.png" width="100"/>
 
 ![pipeline](./images/pipeline.png)
 ![Yolo](./images/yolo.png)
