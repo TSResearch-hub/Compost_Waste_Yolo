@@ -16,12 +16,37 @@ gestionnaires pourront intervenir pour retirer les éléments inappropriés.
 au compost principal.
 ---
 
+
+
 ## 📸 Aperçu
 
 ![pipeline](./images/pipeline.png)
 ![Yolo](./images/yolo.png)
 
 ---
+## Problématique  
+Pour entraîner une IA, il nous faut des données adaptées à notre situation.  
+
+Les données sont constituées d’images contenant des déchets, accompagnées d’annotations :  
+- des boîtes englobantes (coordonnées) pour la détection des objets ;  
+- une classe associée à chaque boîte afin de définir à quelle catégorie appartient l’objet.  
+
+Il existe des données annotées en open source, mais elles ne correspondent pas aux données cibles (c’est-à-dire des déchets compostables, partiellement broyés et mélangés sur un plateau).  
+
+
+---
+
+## Il faut annoter des données  
+
+### Premier livrable : conception d’un outil d’annotation de données avec IA intégrée  
+
+Nous utilisons des données open source pour entraîner une première version de notre IA.  
+Puis, nous utilisons cette IA pour nous aider à annoter de nouvelles images.  
+
+Une fois ces nouvelles images annotées, nous réentraînons notre IA.  
+
+Ce processus itératif pourra être répété plusieurs fois afin d’augmenter progressivement les performances.  
+
 
 ## 🎥 Démo vidéo
 [![Voir la vidéo](https://img.youtube.com/vi/a7Q76RHdqzM/0.jpg)](https://www.youtube.com/watch?v=a7Q76RHdqzM)
