@@ -36,6 +36,9 @@ Il existe des données annotées en open source, mais elles ne correspondent pas
 ![multi](./images/multi_class.png)
 
 ---
+![cible](./images/donnee_cible.png)
+
+
 
 ## Il faut annoter des données  
 
