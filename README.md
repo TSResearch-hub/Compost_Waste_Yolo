@@ -33,6 +33,7 @@ Les données sont constituées d’images contenant des déchets, accompagnées 
 
 Il existe des données annotées en open source, mais elles ne correspondent pas aux données cibles (c’est-à-dire des déchets compostables, partiellement broyés et mélangés sur un plateau).  
 
+![multi](./images/multi_class.png)
 
 ---
 
