@@ -10,7 +10,7 @@ ROOT = root_path.relative_to(Path.cwd())
 MODEL_DIR = ROOT / 'weights'
 DETECTION_MODEL = MODEL_DIR / 'best.pt'
 
-WEBCAM_PATH = 2
+WEBCAM_PATH = 0
 
 COMPOSTABLE = ['Compost'] 
 
