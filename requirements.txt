@@ -3,5 +3,6 @@ ultralytics
 opencv-python-headless
 Pillow
 numpy
-streamlit-drawable-canvas
+matplotlib
+packaging
 pathlib

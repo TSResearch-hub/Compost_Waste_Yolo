@@ -196,7 +196,6 @@ def get_canvas_initial_data(results):
 
         for i, box in enumerate(boxes):
             x_c, y_c, w, h = box
-            # Conversion : centre + taille → coin haut-gauche + taille (format canvas)
             left = float(x_c - w / 2)
             top = float(y_c - h / 2)
             class_name = names[int(clss[i])]
@@ -212,3 +211,22 @@ def get_canvas_initial_data(results):
                 "strokeWidth": 2,
             })
     return initial_drawing
+
+
+CLASS_MAP = {"Dgrx": 0, "Mrisq": 1, "NonCompost": 2, "Compost": 3}
+
+
+def get_detection_initial_data(results):
+    """Transforme les résultats YOLO en bboxes [x, y, w, h] (coin haut-gauche) pour detection()."""
+    bboxes, labels = [], []
+    if not results:
+        return bboxes, labels
+    boxes = results.boxes.xywh.cpu().numpy()
+    clss = results.boxes.cls.cpu().numpy()
+    names = results.names
+    for i, box in enumerate(boxes):
+        x_c, y_c, w, h = box
+        bboxes.append([float(x_c - w / 2), float(y_c - h / 2), float(w), float(h)])
+        class_name = names[int(clss[i])]
+        labels.append(CLASS_MAP.get(class_name, 3))
+    return bboxes, labels

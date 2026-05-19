@@ -4,7 +4,7 @@ import helper
 import settings
 import cv2
 from PIL import Image
-from streamlit_drawable_canvas import st_canvas
+from bbox_editor import detection as st_detection
 import time
 import numpy as np
 
@@ -191,12 +191,8 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTES
 # ══════════════════════════════════════════════════════════════════════════════
-COLOR_TO_CLASS = {v: k for k, v in helper.CLASS_COLORS.items()}
-CLASS_MAP = {"Dgrx": 0, "Mrisq": 1, "NonCompost": 2, "Compost": 3}
 SAVE_DIR = Path("dataset_recolte")
-
-# Emoji de couleur pour identification rapide des boutons de classe
-CLASS_EMOJI = {"Dgrx": "🔴", "Mrisq": "🟠", "NonCompost": "🔵", "Compost": "🟢"}
+LABEL_LIST = list(helper.CLASS_MAP.keys())  # ['Dgrx', 'Mrisq', 'NonCompost', 'Compost']
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITAIRES CANVAS & SAUVEGARDE
@@ -211,38 +207,31 @@ def _prepare_save_dirs():
 
 
 def _reset_canvas_state(canvas_key):
-    """Supprime tout l'état canvas pour ce canvas_key (appelé lors d'un changement d'image)."""
-    for suffix in ("_data", "_clear_counter", "_img_id", "_selected_class", "_selected_obj_idx"):
+    """Supprime tout l'état lié à ce canvas_key."""
+    for suffix in ("_data", "_clear_counter", "_img_id"):
         st.session_state.pop(f"{canvas_key}{suffix}", None)
 
 
-def _save_annotation(pil_img, canvas_objects, w_img, h_img):
+def _save_annotation(pil_img, detection_result, w_img, h_img):
     """
-    Fonction de sauvegarde unifiée. Toujours appelée depuis les objets du canvas
-    (qu'ils aient été édités ou non), ce qui garantit la cohérence entre ce que
-    l'opérateur VOIT et ce qui est enregistré.
+    Sauvegarde l'image et le fichier YOLO depuis le résultat du composant detection().
+    detection_result : liste de {'bbox': [x, y, w, h], 'label_id': int, 'label': str}
+    Les coordonnées bbox sont en pixels dans l'espace image original.
     """
     img_dir, lbl_dir = _prepare_save_dirs()
     timestamp = int(time.time())
     pil_img.save(img_dir / f"cap_{timestamp}.jpg")
 
     yolo_lines = []
-    for obj in canvas_objects:
-        if obj.get("type") == "rect":
-            left = obj["left"]
-            top = obj["top"]
-            w_box = obj["width"] * obj.get("scaleX", 1)
-            h_box = obj["height"] * obj.get("scaleY", 1)
-            x_center = (left + w_box / 2) / w_img
-            y_center = (top + h_box / 2) / h_img
-            norm_w = w_box / w_img
-            norm_h = h_box / h_img
-            # La couleur du trait encode la classe (même lors d'éditions mixtes)
-            obj_label = COLOR_TO_CLASS.get(obj.get("stroke", ""), "Compost")
-            class_id = CLASS_MAP.get(obj_label, 3)
-            yolo_lines.append(
-                f"{class_id} {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}"
-            )
+    for item in detection_result:
+        x, y, w_box, h_box = item["bbox"]
+        x_center = (x + w_box / 2) / w_img
+        y_center = (y + h_box / 2) / h_img
+        norm_w = w_box / w_img
+        norm_h = h_box / h_img
+        yolo_lines.append(
+            f"{item['label_id']} {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}"
+        )
 
     with open(lbl_dir / f"cap_{timestamp}.txt", "w") as f:
         f.write("\n".join(yolo_lines))
@@ -282,177 +271,70 @@ def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
 
 def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=True, offline_mode=False):
     """
-    Éditeur d'annotation YOLO — Mode Focus Absolu.
+    Éditeur d'annotation YOLO basé sur streamlit_image_annotation (Konva).
 
-    Architecture "Zone de Frappe" :
-      LIGNE 1 — [Mode radio | Boutons de classe ×4 à 60px]  ← juste au-dessus du canvas
-      LIGNE 2 — Canvas centré (640×360)
-      LIGNE 3 — [✅ VALIDER — pleine largeur | 🗑 Effacer | ✖ Annuler]  ← juste en dessous
+    Le composant gère nativement :
+      - Mode Transform : dessiner de nouvelles bbox + sélectionner / déplacer / redimensionner
+      - Mode Del       : clic sur une bbox pour la supprimer
+      - Sélecteur de classe : dropdown intégré
+      - Bouton "Complete" : envoie l'état final → déclenche la sauvegarde côté Python
 
-    Tout est dans une colonne centrale pour que les yeux ne bougent pas.
-    La sidebar est fermée par défaut (set_page_config) → max espace horizontal.
-    display_toolbar=False → barre d'outils native supprimée (corbeille bugguée).
+    Boutons Streamlit complémentaires : 🗑 Effacer tout | ✖ Annuler
     """
     h_img, w_img = raw_img.shape[:2]
     img_rgb = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(img_rgb).convert("RGB")
 
-    # ── Session state — données canvas liées à cette image ───────────────────
-    _data_key    = f"{canvas_key}_data"
     _imgid_key   = f"{canvas_key}_img_id"
+    _data_key    = f"{canvas_key}_data"
     _counter_key = f"{canvas_key}_clear_counter"
-    _selcls_key  = f"{canvas_key}_selected_class"
-    _selidx_key  = f"{canvas_key}_selected_obj_idx"
 
+    # Réinitialise les bboxes quand l'image change
     if st.session_state.get(_imgid_key) != id(raw_img):
-        st.session_state[_imgid_key]    = id(raw_img)
-        st.session_state[_data_key]     = helper.get_canvas_initial_data(last_res)
-        st.session_state[_counter_key]  = 0
-        st.session_state.pop(_selcls_key, None)
-        st.session_state.pop(_selidx_key, None)
+        st.session_state[_imgid_key]   = id(raw_img)
+        bboxes, labels = helper.get_detection_initial_data(last_res)
+        st.session_state[_data_key]    = {"bboxes": bboxes, "labels": labels}
+        st.session_state[_counter_key] = 0
 
-    initial_data   = st.session_state[_data_key]
-    clear_counter  = st.session_state.get(_counter_key, 0)
-    selected_class = st.session_state.get(_selcls_key, "Compost")
+    clear_counter = st.session_state.get(_counter_key, 0)
+    data = st.session_state[_data_key]
 
-    # ── Conteneur éditeur ────────────────────────────────────────────────────
-    # Pas de colonne de centrage externe : Streamlit limite la nesting à 2 niveaux.
-    # Le centrage du canvas est délégué au CSS (.editor-canvas-wrap).
     st.markdown("<div class='editor-container'>", unsafe_allow_html=True)
 
-    # ── LIGNE 1 : Mode + Sélection de classe (niveau 1) ──────────────────────
-    # tc_mode / tc_classes = niveau 1. cls_cols à l'intérieur = niveau 2. ✓
-    tc_mode, tc_classes = st.columns([2, 5])
-
-    with tc_mode:
-        mode = st.radio(
-            "Outil",
-            ["Modifier/Supprimer", "Dessiner"],
-            horizontal=True,
-            key=f"mode_{canvas_key}",
-        )
-        drawing_mode = "transform" if mode == "Modifier/Supprimer" else "rect"
-
-    # 4 boutons de classe à 60px — ciblés via aria-label en CSS.
-    # En mode Modifier : le clic reclasse le rectangle sélectionné
-    # (Fabric.js bringToFront → dernier élément du JSON = objet actif).
-    with tc_classes:
-        class_clicked = None
-        cls_cols = st.columns(len(helper.CLASS_COLORS))  # niveau 2 ✓
-        for col, cn in zip(cls_cols, helper.CLASS_COLORS):
-            with col:
-                if st.button(
-                    f"{CLASS_EMOJI[cn]} {cn}",
-                    key=f"cls_{canvas_key}_{cn}",
-                    type="primary" if cn == selected_class else "secondary",
-                    use_container_width=True,
-                ):
-                    class_clicked = cn
-                    selected_class = cn
-                    st.session_state[_selcls_key] = cn
-
-    stroke_color = helper.CLASS_COLORS.get(selected_class, "#ff0000")
-
-    # ── LIGNE 2 : Canvas (centré via CSS) ────────────────────────────────────
-    # display_toolbar=False : supprime la corbeille native qui réappliquait
-    # les prédictions IA au lieu de vraiment vider le canvas.
-    st.markdown("<div class='editor-canvas-wrap'>", unsafe_allow_html=True)
-    canvas_result = st_canvas(
-        initial_drawing=initial_data,
-        fill_color="rgba(255, 165, 0, 0.3)",
-        stroke_width=2,
-        stroke_color=stroke_color,
-        background_image=pil_img,
-        update_streamlit=True,
+    # ── Canvas Konva via streamlit_image_annotation ───────────────────────────
+    # Le bouton "Complete" dans le composant envoie les bboxes → result non-None.
+    # Transform mode : clic sur vide = dessiner | clic sur rect = sélectionner.
+    # Del mode       : clic sur rect = supprimer.
+    result = st_detection(
+        image=pil_img,
+        label_list=LABEL_LIST,
+        bboxes=data["bboxes"],
+        labels=data["labels"],
         height=h_img,
         width=w_img,
-        drawing_mode=drawing_mode,
-        display_toolbar=False,
+        line_width=2,
+        use_space=False,
+        color_map=helper.CLASS_COLORS,
         key=f"{canvas_key}_{clear_counter}",
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── Objets courants (canvas ou session_state si canvas pas encore rendu) ──
-    if canvas_result.json_data and canvas_result.json_data.get("objects"):
-        current_objects = canvas_result.json_data["objects"]
-    else:
-        current_objects = st.session_state.get(_data_key, {}).get("objects", [])
+    # ── Sauvegarde déclenchée par "Complete" dans le composant ────────────────
+    if result is not None:
+        _save_annotation(pil_img, result, w_img, h_img)
+        st.toast("Annotation sauvegardée !", icon="✅")
+        _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
 
-    # ── Reclassement de l'OBJET CIBLÉ (corrige le bug [-1] qui ciblait
-    #    toujours le dernier créé, quelle que soit la sélection canvas).
-    if class_clicked and drawing_mode == "transform" and current_objects:
-        updated  = [dict(o) for o in current_objects]
-        sel_idx  = st.session_state.get(_selidx_key, 0)
-        sel_idx  = max(0, min(sel_idx, len(updated) - 1))
-        updated[sel_idx]["stroke"] = helper.CLASS_COLORS[class_clicked]
-        st.session_state[_data_key]    = {"objects": updated}
-        st.session_state[_counter_key] = clear_counter + 1
-        st.rerun()
-
-    # ── LIGNE 3 : Sélecteur d'objet + Suppression (mode Modifier uniquement) ──
-    # Remplace le clic-droit (non capturé par streamlit-drawable-canvas) :
-    # boutons numérotés colorés par classe + bouton Supprimer dédié.
-    if drawing_mode == "transform" and current_objects:
-        n_obj   = len(current_objects)
-        sel_idx = st.session_state.get(_selidx_key, 0)
-        sel_idx = max(0, min(sel_idx, n_obj - 1))
-
-        lbl_col, *obj_cols, del_col = st.columns([2] + [1] * n_obj + [2])
-        with lbl_col:
-            st.markdown(
-                "<div style='padding-top:0.55rem;font-weight:600;font-size:0.95rem;'>"
-                "Objet ciblé :</div>",
-                unsafe_allow_html=True,
-            )
-        for i, (col, obj) in enumerate(zip(obj_cols, current_objects)):
-            obj_class = COLOR_TO_CLASS.get(obj.get("stroke", ""), "Compost")
-            obj_emoji = CLASS_EMOJI.get(obj_class, "⬜")
-            with col:
-                if st.button(
-                    f"{obj_emoji} {i + 1}",
-                    key=f"selidx_{canvas_key}_{i}",
-                    type="primary" if i == sel_idx else "secondary",
-                    use_container_width=True,
-                ):
-                    st.session_state[_selidx_key] = i
-        with del_col:
-            if st.button("🗑 Supprimer", key=f"del_obj_{canvas_key}", use_container_width=True):
-                updated = [dict(o) for o in current_objects]
-                updated.pop(sel_idx)
-                st.session_state[_data_key]    = {"objects": updated}
-                st.session_state[_counter_key] = clear_counter + 1
-                if updated:
-                    st.session_state[_selidx_key] = min(sel_idx, len(updated) - 1)
-                else:
-                    st.session_state.pop(_selidx_key, None)
-                st.rerun()
-
-    # ── LIGNE 4 : Actions ─────────────────────────────────────────────────────
+    # ── Boutons complémentaires ───────────────────────────────────────────────
     st.write("")
-    va_validate, va_clear, va_cancel = st.columns([6, 1, 1])
+    col_clear, col_cancel = st.columns([1, 1])
 
-    with va_validate:
-        if st.button(
-            "✅  Valider l'annotation",
-            key=f"validate_{canvas_key}",
-            type="primary",
-            use_container_width=True,
-        ):
-            if canvas_result.json_data is not None:
-                objects = canvas_result.json_data.get("objects", [])
-            else:
-                objects = helper.get_canvas_initial_data(last_res).get("objects", [])
-            _save_annotation(pil_img, objects, w_img, h_img)
-            st.toast("Annotation sauvegardée !", icon="✅")
-            _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
-
-    with va_clear:
-        if st.button("🗑 Effacer", key=f"clear_{canvas_key}", use_container_width=True):
-            st.session_state[_data_key]    = {"objects": []}
+    with col_clear:
+        if st.button("🗑 Effacer tout", key=f"clear_{canvas_key}", use_container_width=True):
+            st.session_state[_data_key]    = {"bboxes": [], "labels": []}
             st.session_state[_counter_key] = clear_counter + 1
             st.rerun()
 
-    with va_cancel:
+    with col_cancel:
         if st.button("✖ Annuler", key=f"cancel_{canvas_key}", use_container_width=True):
             if exit_mode_annotation:
                 _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
