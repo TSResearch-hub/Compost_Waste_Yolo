@@ -230,3 +230,30 @@ def get_detection_initial_data(results):
         class_name = names[int(clss[i])]
         labels.append(CLASS_MAP.get(class_name, 3))
     return bboxes, labels
+
+
+def extract_frames_from_video(video_path: str, interval_seconds: float) -> list:
+    """Extrait une frame toutes les interval_seconds secondes depuis une vidéo."""
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_step = max(1, int(fps * interval_seconds))
+
+    frames = []
+    frame_idx = 0
+    while frame_idx < total_frames:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_resized = cv2.resize(frame, (640, int(640 * 9 / 16)))
+        t = frame_idx / fps
+        frames.append({
+            "image": frame_resized,
+            "name": f"frame_{t:.2f}s.jpg",
+            "res": None,
+        })
+        frame_idx += frame_step
+
+    cap.release()
+    return frames

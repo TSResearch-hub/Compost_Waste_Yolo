@@ -1,0 +1,15 @@
+# Environnements Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Dépendances npm (se recrée avec yarn install dans bbox_editor/frontend/)
+bbox_editor/frontend/node_modules/
+
+# Assets lourds non versionné
+images/
+video/
+
+# Données annotées (décommenter si tu ne veux pas les versionner)
+# dataset_recolte/

@@ -41,6 +41,7 @@ def detection(
     color_map: dict = None,
     use_space: bool = False,
     key: str = None,
+    token: int = 0,
 ) -> list | None:
     """
     Affiche un éditeur de bounding boxes interactif.
@@ -112,10 +113,13 @@ def detection(
         color_map=color_map,
         line_width=line_width,
         use_space=use_space,
+        token=token,
         key=key,
     )
 
     if raw is None:
+        return None
+    if not isinstance(raw, dict) or raw.get("token") != token:
         return None
 
     return [
@@ -124,5 +128,5 @@ def detection(
             "label_id": item["label_id"],
             "label": item["label"],
         }
-        for item in raw
+        for item in raw["bboxes"]
     ]

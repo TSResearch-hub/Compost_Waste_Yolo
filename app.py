@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import tempfile
 import streamlit as st
 import helper
 import settings
@@ -243,6 +245,7 @@ def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
     - offline_mode=True  → avance dans offline_queue (onglet hors ligne)
     - offline_mode=False → avance dans capture_queue (webcam)
     """
+    st.session_state["_annot_token"] = st.session_state.get("_annot_token", 0) + 1
     _reset_canvas_state(canvas_key)
     if not exit_mode_annotation:
         return  # Cas hors ligne image unique (legacy)
@@ -297,14 +300,15 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
         st.session_state[_counter_key] = 0
 
     clear_counter = st.session_state.get(_counter_key, 0)
+    annot_token   = st.session_state.get("_annot_token", 0)
     data = st.session_state[_data_key]
 
     st.markdown("<div class='editor-container'>", unsafe_allow_html=True)
 
-    # ── Canvas Konva via streamlit_image_annotation ───────────────────────────
-    # Le bouton "Complete" dans le composant envoie les bboxes → result non-None.
-    # Transform mode : clic sur vide = dessiner | clic sur rect = sélectionner.
-    # Del mode       : clic sur rect = supprimer.
+    # ── Canvas Konva via bbox_editor ──────────────────────────────────────────
+    # token est incrémenté à chaque changement d'image dans _exit_annotation().
+    # Le composant React renvoie {token, bboxes:[...]} ; si le token ne correspond
+    # pas, Python ignore la valeur (valeur mise en cache Streamlit d'une ancienne image).
     result = st_detection(
         image=pil_img,
         label_list=LABEL_LIST,
@@ -315,7 +319,8 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
         line_width=2,
         use_space=False,
         color_map=helper.CLASS_COLORS,
-        key=f"{canvas_key}_{clear_counter}",
+        token=annot_token,
+        key=f"{canvas_key}_{annot_token}_{clear_counter}",
     )
 
     # ── Sauvegarde déclenchée par "Complete" dans le composant ────────────────
@@ -345,7 +350,7 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
 # ══════════════════════════════════════════════════════════════════════════════
 # ONGLETS PRINCIPAUX
 # ══════════════════════════════════════════════════════════════════════════════
-tab_detection, tab_offline = st.tabs(["📹 Détection en direct", "🗂 Annotation hors ligne"])
+tab_detection, tab_offline, tab_video = st.tabs(["📹 Détection en direct", "🗂 Annotation hors ligne", "🎬 Extraction vidéo"])
 
 # ─── ONGLET 1 : DÉTECTION EN DIRECT ──────────────────────────────────────────
 with tab_detection:
@@ -488,3 +493,57 @@ with tab_offline:
         # Nettoyage du compteur total quand la file est épuisée après rerun
         if not st.session_state.get("offline_queue"):
             st.session_state.pop("offline_queue_total", None)
+
+# ─── ONGLET 3 : EXTRACTION VIDÉO ─────────────────────────────────────────────
+with tab_video:
+    st.write("Importez une vidéo pour en extraire des images à intervalle régulier.")
+    st.write("Les images extraites seront envoyées directement vers l'onglet **Annotation hors ligne**.")
+
+    uploaded_video = st.file_uploader(
+        "Choisir une vidéo",
+        type=["mp4", "avi", "mov", "mkv", "webm"],
+    )
+
+    if uploaded_video is not None:
+        suffix = Path(uploaded_video.name).suffix or ".mp4"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(uploaded_video.getvalue())
+            tmp_path = tmp.name
+
+        try:
+            cap = cv2.VideoCapture(tmp_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            duration = total_frames / fps if fps > 0 else 0
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Durée", f"{duration:.1f} s")
+            c2.metric("FPS", f"{fps:.0f}")
+            c3.metric("Frames totales", total_frames)
+
+            max_interval = max(1, int(duration))
+            interval = st.slider(
+                "Intervalle d'extraction (s)",
+                min_value=1,
+                max_value=min(max_interval, 120),
+                value=min(5, max_interval),
+                step=1,
+            )
+            n_to_extract = max(1, int(duration / interval))
+            st.caption(f"→ {n_to_extract} image(s) à extraire")
+
+            if st.button(
+                f"🎬 Extraire {n_to_extract} image(s)",
+                type="primary",
+                use_container_width=True,
+            ):
+                with st.spinner("Extraction en cours..."):
+                    frames = helper.extract_frames_from_video(tmp_path, interval)
+                st.session_state["offline_queue"] = frames
+                st.session_state.pop("offline_queue_total", None)
+                _reset_canvas_state("canvas_offline")
+                st.toast(f"{len(frames)} images extraites — allez dans 'Annotation hors ligne'", icon="🎬")
+                st.rerun()
+        finally:
+            os.unlink(tmp_path)
