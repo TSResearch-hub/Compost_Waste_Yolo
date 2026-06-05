@@ -133,6 +133,72 @@ div[data-testid="stRadio"] > div { gap: 0.6rem !important; }
     text-align: center; font-size: 0.88rem; line-height: 1.6;
 }
 section[data-testid="stSidebar"] .stMarkdown p { font-size: 0.85rem; }
+
+/* ══ RESPONSIVE — TABLETTES & SMARTPHONES ══════════════════════════════════ */
+
+/* Tablette portrait (≤ 900 px) */
+@media (max-width: 900px) {
+    .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        max-width: 100% !important;
+    }
+    /* Colonnes Streamlit : autoriser le retour à la ligne */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.5rem 0 !important;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        min-width: min(100%, 280px) !important;
+        flex: 1 1 auto !important;
+    }
+    /* Tabs : texte un peu plus compact */
+    [data-testid="stTabBar"] button p {
+        font-size: 0.82rem !important;
+    }
+}
+
+/* Smartphone portrait (≤ 600 px) */
+@media (max-width: 600px) {
+    /* Toutes les colonnes passent en pleine largeur */
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+    /* Tabs : icône + texte court pour tenir sur une ligne */
+    [data-testid="stTabBar"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+    }
+    [data-testid="stTabBar"] button p {
+        font-size: 0.72rem !important;
+        white-space: nowrap !important;
+    }
+    /* Boutons tactiles plus généreux */
+    div[data-testid="stButton"] > button {
+        min-height: 3.2rem !important;
+        font-size: 1rem !important;
+    }
+    div[data-testid="stButton"] > button[kind="primary"] {
+        min-height: 3.5rem !important;
+        font-size: 1.1rem !important;
+    }
+    /* Alertes : un peu plus compactes */
+    .alert-block {
+        padding: 0.65rem 0.75rem !important;
+        gap: 0.55rem !important;
+    }
+    .alert-icon { font-size: 1.5rem !important; }
+    .alert-block strong { font-size: 0.88rem !important; }
+    .alert-block small  { font-size: 0.74rem !important; }
+    /* Metrics vidéo (durée, fps, frames) */
+    [data-testid="stMetric"] {
+        padding: 0.4rem !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.2rem !important;
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 

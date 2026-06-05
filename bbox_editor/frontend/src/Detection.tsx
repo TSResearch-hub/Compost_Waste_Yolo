@@ -4,7 +4,7 @@ import {
   ComponentProps
 } from "streamlit-component-lib"
 import React, { useEffect, useState } from "react"
-import { ChakraProvider, Select, Box, Spacer, HStack, Center, Button, Text } from '@chakra-ui/react'
+import { ChakraProvider, Select, Box, Flex, Center, Button, Text } from '@chakra-ui/react'
 
 import useImage from 'use-image';
 
@@ -82,13 +82,20 @@ const Detection = ({ args, theme }: ComponentProps) => {
   const [scale, setScale] = useState(1.0)
   useEffect(() => {
     const resizeCanvas = () => {
-      const scale_ratio = window.innerWidth * 0.8 / image_size[0]
+      const isMobile = window.innerWidth < 768
+      // Sur mobile le panneau de classe est en dessous → le canvas peut utiliser ~93 % de la largeur.
+      // Sur desktop il est à droite → on laisse ~78 % pour le canvas.
+      const ratio = isMobile ? 0.93 : 0.78
+      const scale_ratio = window.innerWidth * ratio / image_size[0]
       setScale(Math.min(scale_ratio, 1.0))
       const imageHeight = image_size[1] * Math.min(scale_ratio, 1.0)
-      Streamlit.setFrameHeight(Math.max(imageHeight, 200))
+      // Sur mobile on ajoute la hauteur du panneau de classe empilé en dessous (~160 px)
+      const extraHeight = isMobile ? 160 : 0
+      Streamlit.setFrameHeight(Math.max(imageHeight + extraHeight, 200))
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas()
+    return () => { window.removeEventListener('resize', resizeCanvas); }
   }, [image_size])
 
   useEffect(() => {
@@ -123,8 +130,13 @@ const Detection = ({ args, theme }: ComponentProps) => {
     <ChakraProvider>
       <ThemeSwitcher theme={theme}>
         <Center>
-          <HStack>
-            <Box width="80%">
+          <Flex
+            direction={{ base: 'column', md: 'row' }}
+            gap={3}
+            width="100%"
+            align={{ base: 'stretch', md: 'flex-start' }}
+          >
+            <Box>
               <BBoxCanvas
                 rectangles={rectangles}
                 selectedId={selectedId}
@@ -139,8 +151,7 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 strokeWidth={line_width}
               />
             </Box>
-            <Spacer />
-            <Box>
+            <Box minW={{ md: '140px' }}>
               <Text fontSize='sm'>Classe</Text>
               <Select value={label} onChange={handleClassSelectorChange}>
                 {label_list.map((l) => <option key={l} value={l}>{l}</option>)}
@@ -148,9 +159,9 @@ const Detection = ({ args, theme }: ComponentProps) => {
               <Text fontSize='xs' color='gray.500' mt={2}>
                 Clic droit sur une bbox pour la supprimer
               </Text>
-              <Button mt={3} onClick={sendValue}>Valider</Button>
+              <Button mt={3} width="100%" onClick={sendValue}>Valider</Button>
             </Box>
-          </HStack>
+          </Flex>
         </Center>
       </ThemeSwitcher>
     </ChakraProvider>
