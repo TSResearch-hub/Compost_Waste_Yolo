@@ -232,6 +232,15 @@ def get_detection_initial_data(results):
     return bboxes, labels
 
 
+def resize_keep_ratio(img_bgr, max_w: int = 1280, max_h: int = 720):
+    """Redimensionne en conservant le ratio, sans jamais agrandir ni dépasser max_w × max_h."""
+    h, w = img_bgr.shape[:2]
+    scale = min(max_w / w, max_h / h, 1.0)
+    if scale == 1.0:
+        return img_bgr
+    return cv2.resize(img_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+
 def extract_frames_from_video(video_path: str, interval_seconds: float) -> list:
     """Extrait une frame toutes les interval_seconds secondes depuis une vidéo."""
     cap = cv2.VideoCapture(video_path)
@@ -246,7 +255,7 @@ def extract_frames_from_video(video_path: str, interval_seconds: float) -> list:
         ret, frame = cap.read()
         if not ret:
             break
-        frame_resized = cv2.resize(frame, (640, int(640 * 9 / 16)))
+        frame_resized = resize_keep_ratio(frame)
         t = frame_idx / fps
         frames.append({
             "image": frame_resized,

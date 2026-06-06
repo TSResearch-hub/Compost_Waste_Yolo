@@ -23,6 +23,11 @@ export interface PythonArgs {
   token: number
 }
 
+// Largeur fixe du panneau de contrôle (boutons de classe + Valider) en px
+const SIDE_PANEL_W = 230
+// gap entre canvas et panneau en px
+const GAP = 16
+
 const Detection = ({ args, theme }: ComponentProps) => {
   const {
     image_url,
@@ -80,22 +85,25 @@ const Detection = ({ args, theme }: ComponentProps) => {
   }
 
   const [scale, setScale] = useState(1.0)
+
   useEffect(() => {
     const resizeCanvas = () => {
       const isMobile = window.innerWidth < 768
-      // Sur mobile le panneau de classe est en dessous → le canvas peut utiliser ~93 % de la largeur.
-      // Sur desktop il est à droite → on laisse ~78 % pour le canvas.
-      const ratio = isMobile ? 0.93 : 0.78
-      const scale_ratio = window.innerWidth * ratio / image_size[0]
+      // Sur desktop : on soustrait le panneau latéral fixe + le gap
+      const reserved = isMobile ? 0 : SIDE_PANEL_W + GAP
+      const availableWidth = Math.max(100, window.innerWidth - reserved)
+      const scale_ratio = availableWidth / image_size[0]
+      // Pas d'upscaling : l'image source est déjà à 1280 px max, pas besoin d'agrandir
       setScale(Math.min(scale_ratio, 1.0))
       const imageHeight = image_size[1] * Math.min(scale_ratio, 1.0)
-      // Sur mobile on ajoute la hauteur du panneau de classe empilé en dessous (~160 px)
+      // Sur mobile le panneau de contrôle est empilé en dessous (~160 px)
       const extraHeight = isMobile ? 160 : 0
-      Streamlit.setFrameHeight(Math.max(imageHeight + extraHeight, 200))
+      Streamlit.setFrameHeight(Math.max(imageHeight + extraHeight + 10, 200))
     }
-    window.addEventListener('resize', resizeCanvas);
+
+    window.addEventListener('resize', resizeCanvas)
     resizeCanvas()
-    return () => { window.removeEventListener('resize', resizeCanvas); }
+    return () => { window.removeEventListener('resize', resizeCanvas) }
   }, [image_size])
 
   useEffect(() => {
@@ -132,10 +140,11 @@ const Detection = ({ args, theme }: ComponentProps) => {
         <Center>
           <Flex
             direction={{ base: 'column', md: 'row' }}
-            gap={3}
-            width="100%"
-            align={{ base: 'stretch', md: 'flex-start' }}
+            gap={`${GAP}px`}
+            width={{ base: '100%', md: 'auto' }}
+            align={{ base: 'stretch', md: 'center' }}
           >
+            {/* Canvas — dimensionné précisément par resizeCanvas */}
             <Box>
               <BBoxCanvas
                 rectangles={rectangles}
@@ -151,32 +160,60 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 strokeWidth={line_width}
               />
             </Box>
-            <Box minW={{ md: '140px' }}>
-              <Text fontSize='sm' mb={2}>Classe</Text>
-              <SimpleGrid columns={{ base: 4, md: 1 }} gap={2}>
-                {label_list.map((l) => {
-                  const isActive = label === l
-                  return (
-                    <Button
-                      key={l}
-                      size='sm'
-                      bg={isActive ? color_map[l] : 'transparent'}
-                      borderColor={color_map[l]}
-                      borderWidth='2px'
-                      color={isActive ? 'white' : color_map[l]}
-                      _hover={{ bg: color_map[l], color: 'white' }}
-                      onClick={() => handleClassSelect(l)}
-                      width='100%'
-                    >
-                      {l}
-                    </Button>
-                  )
-                })}
-              </SimpleGrid>
-              <Text fontSize='xs' color='gray.500' mt={2}>
+
+            {/* Panneau de contrôle — largeur fixe sur desktop */}
+            <Box
+              flexShrink={0}
+              width={{ base: '100%', md: `${SIDE_PANEL_W}px` }}
+              pl={{ md: 2 }}
+            >
+              <Text fontSize='sm' fontWeight='semibold' color='gray.600' mb={3}>
+                Classe
+              </Text>
+
+              {/* Boutons de classe + Valider côte à côte */}
+              <Flex gap={3} align="stretch">
+                <SimpleGrid columns={{ base: 2, md: 1 }} gap={3} flex="1">
+                  {label_list.map((l) => {
+                    const isActive = label === l
+                    return (
+                      <Button
+                        key={l}
+                        size='md'
+                        bg={isActive ? color_map[l] : 'transparent'}
+                        borderColor={color_map[l]}
+                        borderWidth='2px'
+                        color={isActive ? 'white' : color_map[l]}
+                        _hover={{ bg: color_map[l], color: 'white' }}
+                        onClick={() => handleClassSelect(l)}
+                        width='100%'
+                        fontWeight={isActive ? 'bold' : 'normal'}
+                      >
+                        {l}
+                      </Button>
+                    )
+                  })}
+                </SimpleGrid>
+
+                {/* Valider — vert, pleine hauteur du bloc de classe */}
+                <Button
+                  colorScheme='green'
+                  onClick={sendValue}
+                  height="auto"
+                  minH="100%"
+                  px={5}
+                  fontSize='md'
+                  fontWeight='bold'
+                  flexShrink={0}
+                  boxShadow='md'
+                >
+                  Valider
+                </Button>
+              </Flex>
+
+              <Text fontSize='xs' color='gray.400' mt={4} lineHeight='1.4'>
                 Clic droit sur une bbox pour la supprimer
               </Text>
-              <Button mt={3} width="100%" onClick={sendValue}>Valider</Button>
             </Box>
           </Flex>
         </Center>

@@ -511,7 +511,7 @@ with tab_offline:
                 for f in uploaded_files:
                     nparr = np.frombuffer(f.read(), np.uint8)
                     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    img_resized = cv2.resize(img_bgr, (640, int(640 * (9 / 16))))
+                    img_resized = helper.resize_keep_ratio(img_bgr)
                     items.append({"image": img_resized, "name": f.name, "res": None})
                 st.session_state["offline_queue"] = items
                 _reset_canvas_state("canvas_offline")
