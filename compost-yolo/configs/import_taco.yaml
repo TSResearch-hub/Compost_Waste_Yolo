@@ -1,0 +1,143 @@
+# Correspondance pour TACO (fork ali-ikched de roboflow-universe-projects/
+# taco-object-detection-kcxyn, version sans augmentations).
+# Licence : CC BY 4.0 (attribution) pour les annotations ; images issues de
+# Flickr (licences variées) — citer TACO (Proença & Simões 2020, tacodataset.org).
+#
+# Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
+# - Aerosol -> Metal (certains sprays sont en alu)
+# - Drink carton -> Carton (briques multicouches carton/plastique/alu)
+# - Styrofoam/Foam -> Plastique (polystyrène)
+# - Crisp packet -> Plastique (film plastique métallisé)
+# - Tissues -> null (papier, mais visuellement trop éloigné du carton ;
+#   et souvent toléré dans le compost)
+
+# Export Roboflow en polygones de segmentation -> convertis en boîtes à l'import
+format: yolo-seg
+
+source_names:
+  - Aerosol
+  - Aluminium blister pack
+  - Aluminium foil
+  - Battery
+  - Broken glass
+  - Carded blister pack
+  - Cigarette
+  - Clear plastic bottle
+  - Corrugated carton
+  - Crisp packet
+  - Disposable food container
+  - Disposable plastic cup
+  - Drink can
+  - Drink carton
+  - Egg carton
+  - Foam cup
+  - Foam food container
+  - Food Can
+  - Food waste
+  - Garbage bag
+  - Glass bottle
+  - Glass cup
+  - Glass jar
+  - Magazine paper
+  - Meal carton
+  - Metal bottle cap
+  - Metal lid
+  - Normal paper
+  - Other carton
+  - Other plastic
+  - Other plastic bottle
+  - Other plastic container
+  - Other plastic cup
+  - Other plastic wrapper
+  - Paper bag
+  - Paper cup
+  - Paper straw
+  - Pizza box
+  - Plastic bottle cap
+  - Plastic film
+  - Plastic glooves
+  - Plastic lid
+  - Plastic straw
+  - Plastic utensils
+  - Polypropylene bag
+  - Pop tab
+  - Rope - strings
+  - Scrap metal
+  - Shoe
+  - Single-use carrier bag
+  - Six pack rings
+  - Spread tub
+  - Squeezable tube
+  - Styrofoam piece
+  - Tissues
+  - Toilet tube
+  - Tupperware
+  - Unlabeled litter
+  - Wrapping paper
+
+class_map:
+  # --- Aluminium ---
+  Drink can: Aluminium
+  Aluminium foil: Aluminium
+  Aluminium blister pack: Aluminium
+  Pop tab: Aluminium
+  # --- Metal (acier) ---
+  Food Can: Metal
+  Metal bottle cap: Metal
+  Metal lid: Metal
+  Scrap metal: Metal
+  Aerosol: Metal
+  # --- Carton / papier ---
+  Corrugated carton: Carton
+  Other carton: Carton
+  Drink carton: Carton
+  Egg carton: Carton
+  Meal carton: Carton
+  Pizza box: Carton
+  Toilet tube: Carton
+  Normal paper: Carton
+  Magazine paper: Carton
+  Wrapping paper: Carton
+  Paper bag: Carton
+  Paper cup: Carton
+  Paper straw: Carton
+  # --- Plastique ---
+  Clear plastic bottle: Plastique
+  Other plastic bottle: Plastique
+  Plastic bottle cap: Plastique
+  Plastic lid: Plastique
+  Plastic film: Plastique
+  Plastic straw: Plastique
+  Plastic utensils: Plastique
+  Plastic glooves: Plastique
+  Other plastic: Plastique
+  Other plastic container: Plastique
+  Other plastic cup: Plastique
+  Other plastic wrapper: Plastique
+  Disposable food container: Plastique
+  Disposable plastic cup: Plastique
+  Garbage bag: Plastique
+  Polypropylene bag: Plastique
+  Single-use carrier bag: Plastique
+  Six pack rings: Plastique
+  Spread tub: Plastique
+  Squeezable tube: Plastique
+  Tupperware: Plastique
+  Crisp packet: Plastique
+  Styrofoam piece: Plastique
+  Foam cup: Plastique
+  Foam food container: Plastique
+  # --- Organique ---
+  Food waste: Organique
+  # --- Ignorées (pas de classe correspondante au projet) ---
+  Glass bottle: null
+  Glass cup: null
+  Glass jar: null
+  Broken glass: null
+  Battery: null
+  Cigarette: null
+  Shoe: null
+  Rope - strings: null
+  Carded blister pack: null
+  Tissues: null
+  Unlabeled litter: null

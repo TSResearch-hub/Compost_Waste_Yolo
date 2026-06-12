@@ -1,0 +1,19 @@
+# Correspondance pour le re-upload Roboflow de ZeroWaste (wasteflow/zerowaste-kq8pn v2).
+# ATTENTION licence : la page affiche CC BY 4.0 mais le dataset ZeroWaste
+# original est CC BY-NC 4.0 (non commercial) — usage expérimental uniquement
+# tant que le maître de stage n'a pas validé. Source : http://ai.bu.edu/zerowaste/
+
+format: yolo
+
+# Noms exacts du data.yaml de l'export (le préfixe numérique fait partie du nom)
+source_names:
+  - "0 rigid plastic"
+  - "1 cardboard"
+  - "2 metal"
+  - "3 soft plastic"
+
+class_map:
+  "0 rigid plastic": Plastique
+  "3 soft plastic": Plastique
+  "1 cardboard": Carton
+  "2 metal": Metal

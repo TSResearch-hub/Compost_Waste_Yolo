@@ -1,0 +1,23 @@
+# Données et sorties (volumineuses, régénérables)
+data/**
+!data/**/
+!data/**/.gitkeep
+runs/**
+!runs/.gitkeep
+*.pt
+*.onnx
+*_ncnn_model/
+
+# Environnements et caches Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# IDE / OS / outils locaux
+.vscode/
+.idea/
+.DS_Store
+.claude/

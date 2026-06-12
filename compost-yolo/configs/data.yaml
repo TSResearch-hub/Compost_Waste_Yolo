@@ -1,0 +1,11 @@
+# SEUL endroit où les classes sont définies.
+# Pour modifier les classes : éditer cette liste, ré-exporter les annotations
+# depuis l'interface, puis relancer prepare_dataset.py.
+# L'ordre compte : l'index dans cette liste = l'id de classe dans les labels YOLO.
+names:
+  - Organique
+  - Plastique
+  - Metal
+  - Carton
+  - Aluminium
+  - Ceramique

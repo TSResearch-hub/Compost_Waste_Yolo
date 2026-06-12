@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "compost-detection"
+version = "0.1.0"
+description = "Entraînement et évaluation YOLO pour la détection de matériaux intrus dans le compost"
+requires-python = ">=3.10"
+dependencies = [
+    "ultralytics>=8.2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
