@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
-import { Layer, Line, Rect, Stage, Image } from 'react-konva';
+import { Layer, Line, Rect, Stage, Image, Group } from 'react-konva';
 import BBox from './BBox'
 import Konva from 'konva';
 
@@ -14,7 +14,8 @@ export interface BBoxCanvasLayerProps {
   label: string,
   image_size: number[],
   image: any,
-  strokeWidth: number
+  strokeWidth: number,
+  opacity: number
 }
 
 const ZOOM_FACTOR = 1.12
@@ -33,7 +34,8 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     label,
     image_size,
     image,
-    strokeWidth
+    strokeWidth,
+    opacity
   }: BBoxCanvasLayerProps = props
 
   const [adding,   setAdding]   = useState<number[] | null>(null)
@@ -210,6 +212,7 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
 
       {/* Couche bboxes + rect en cours de dessin */}
       <Layer>
+        <Group opacity={opacity}>
         {rectangles.map((rect, i) => (
           <BBox
             key={i}
@@ -238,6 +241,7 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
             }}
           />
         ))}
+        </Group>
         {adding !== null && (
           <Rect
             fill={color_map[label] + '4D'}

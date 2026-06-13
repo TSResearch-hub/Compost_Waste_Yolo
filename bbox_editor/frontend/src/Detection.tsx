@@ -4,7 +4,7 @@ import {
   ComponentProps
 } from "streamlit-component-lib"
 import React, { useEffect, useState } from "react"
-import { ChakraProvider, SimpleGrid, Box, Flex, Center, Button, Text } from '@chakra-ui/react'
+import { ChakraProvider, SimpleGrid, Box, Flex, Center, Button, Text, Slider, SliderTrack, SliderFilledTrack, SliderThumb } from '@chakra-ui/react'
 
 import useImage from 'use-image';
 
@@ -69,6 +69,8 @@ const Detection = ({ args, theme }: ComponentProps) => {
   );
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [label, setLabel] = useState(label_list[0])
+  const [bboxOpacity, setBboxOpacity] = useState(1.0)
+  const [bboxStroke,  setBboxStroke]  = useState(line_width)
 
   const handleClassSelect = (l: string) => {
     setLabel(l)
@@ -157,7 +159,8 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 label={label}
                 image={image}
                 image_size={image_size}
-                strokeWidth={line_width}
+                strokeWidth={bboxStroke}
+                opacity={bboxOpacity}
               />
             </Box>
 
@@ -211,7 +214,33 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 </Button>
               </Flex>
 
-              <Text fontSize='xs' color='gray.400' mt={4} lineHeight='1.4'>
+              {/* Slider opacité */}
+              <Flex align="center" gap={2} mt={4}>
+                <Text fontSize='xs' color='gray.500' minW="50px">Opacité</Text>
+                <Slider flex="1" value={bboxOpacity} min={0.1} max={1} step={0.05}
+                        onChange={(v) => setBboxOpacity(v)}>
+                  <SliderTrack h="3px"><SliderFilledTrack /></SliderTrack>
+                  <SliderThumb boxSize={3} />
+                </Slider>
+                <Text fontSize='xs' color='gray.400' minW="30px" textAlign="right">
+                  {Math.round(bboxOpacity * 100)}%
+                </Text>
+              </Flex>
+
+              {/* Slider épaisseur bordure */}
+              <Flex align="center" gap={2} mt={2}>
+                <Text fontSize='xs' color='gray.500' minW="50px">Bordure</Text>
+                <Slider flex="1" value={bboxStroke} min={0.5} max={8} step={0.5}
+                        onChange={(v) => setBboxStroke(v)}>
+                  <SliderTrack h="3px"><SliderFilledTrack /></SliderTrack>
+                  <SliderThumb boxSize={3} />
+                </Slider>
+                <Text fontSize='xs' color='gray.400' minW="30px" textAlign="right">
+                  {bboxStroke}px
+                </Text>
+              </Flex>
+
+              <Text fontSize='xs' color='gray.400' mt={3} lineHeight='1.4'>
                 Clic droit sur une bbox pour la supprimer
               </Text>
             </Box>
