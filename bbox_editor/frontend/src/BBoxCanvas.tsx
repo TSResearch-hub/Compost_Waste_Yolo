@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react"
-import { Layer, Rect, Stage, Image } from 'react-konva';
+import { Layer, Line, Rect, Stage, Image } from 'react-konva';
 import BBox from './BBox'
 import Konva from 'konva';
 
@@ -33,9 +33,8 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
   }: BBoxCanvasLayerProps = props
 
   const [adding, setAdding] = useState<number[] | null>(null)
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
 
-  // Clic sur la zone vide : démarrer un dessin si rien n'est sélectionné,
-  // sinon désélectionner.
   const checkDeselect = (e: any) => {
     if (!(e.target instanceof Konva.Rect)) {
       if (selectedId === null) {
@@ -79,19 +78,28 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     }
   }, [rectangles, image_size])
 
+  const W = image_size[0] * scale
+  const H = image_size[1] * scale
+
   return (
     <Stage
-      width={image_size[0] * scale}
-      height={image_size[1] * scale}
+      width={W}
+      height={H}
       onMouseDown={checkDeselect}
       onContextMenu={(e) => { e.evt.preventDefault(); }}
       onMouseMove={(e: any) => {
-        if (adding !== null) {
-          const pointer = e.target.getStage().getPointerPosition()
-          setAdding([adding[0], adding[1], pointer.x, pointer.y])
+        const pointer = e.target.getStage()?.getPointerPosition()
+        if (pointer) {
+          setMousePos({ x: pointer.x, y: pointer.y })
+          if (adding !== null) {
+            setAdding([adding[0], adding[1], pointer.x, pointer.y])
+          }
         }
       }}
-      onMouseLeave={() => { setAdding(null) }}
+      onMouseLeave={() => {
+        setAdding(null)
+        setMousePos(null)
+      }}
       onMouseUp={() => {
         if (adding !== null) {
           const rects = rectangles.slice();
@@ -110,9 +118,12 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
         }
       }}
     >
+      {/* Couche image */}
       <Layer>
         <Image image={image} scaleX={scale} scaleY={scale} />
       </Layer>
+
+      {/* Couche bboxes + rect en cours de dessin */}
       <Layer>
         {rectangles.map((rect, i) => (
           <BBox
@@ -151,6 +162,22 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
           />
         )}
       </Layer>
+
+      {/* Couche crosshair — non-interactive, toujours au-dessus */}
+      {mousePos !== null && (
+        <Layer listening={false}>
+          {/* Ligne verticale — ombre sombre puis trait blanc */}
+          <Line points={[mousePos.x, 0, mousePos.x, H]}
+                stroke="rgba(0,0,0,0.45)" strokeWidth={3} dash={[6, 6]} />
+          <Line points={[mousePos.x, 0, mousePos.x, H]}
+                stroke="rgba(255,255,255,0.9)" strokeWidth={1} dash={[6, 6]} />
+          {/* Ligne horizontale */}
+          <Line points={[0, mousePos.y, W, mousePos.y]}
+                stroke="rgba(0,0,0,0.45)" strokeWidth={3} dash={[6, 6]} />
+          <Line points={[0, mousePos.y, W, mousePos.y]}
+                stroke="rgba(255,255,255,0.9)" strokeWidth={1} dash={[6, 6]} />
+        </Layer>
+      )}
     </Stage>
   );
 };
