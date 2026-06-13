@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { Layer, Line, Rect, Stage, Image } from 'react-konva';
 import BBox from './BBox'
 import Konva from 'konva';
@@ -17,6 +17,10 @@ export interface BBoxCanvasLayerProps {
   strokeWidth: number
 }
 
+const ZOOM_FACTOR = 1.12
+const ZOOM_MIN    = 0.25
+const ZOOM_MAX    = 12
+
 const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
   const {
     rectangles,
@@ -32,22 +36,40 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     strokeWidth
   }: BBoxCanvasLayerProps = props
 
-  const [adding, setAdding] = useState<number[] | null>(null)
+  const [adding,   setAdding]   = useState<number[] | null>(null)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
+  const [zoom,     setZoom]     = useState(1.0)
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStart = useRef<{ mx: number; my: number; sx: number; sy: number } | null>(null)
 
+  // Convertit des coordonnées viewport en coordonnées contenu du Stage
+  const toStage = (stage: any, vx: number, vy: number) => ({
+    x: (vx - stage.x()) / stage.scaleX(),
+    y: (vy - stage.y()) / stage.scaleY(),
+  })
+
+  // Réinitialise zoom + position quand une nouvelle image est chargée
+  useEffect(() => {
+    setZoom(1.0)
+    setStagePos({ x: 0, y: 0 })
+  }, [image_size])
+
+  // Clic gauche sur zone vide : démarrer dessin ou désélectionner
   const checkDeselect = (e: any) => {
     if (!(e.target instanceof Konva.Rect)) {
       if (selectedId === null) {
-        const pointer = e.target.getStage().getPointerPosition()
-        setAdding([pointer.x, pointer.y, pointer.x, pointer.y])
+        const sc = toStage(e.target.getStage(), ...Object.values(e.target.getStage().getPointerPosition()) as [number, number])
+        setAdding([sc.x, sc.y, sc.x, sc.y])
       } else {
-        setSelectedId(null);
+        setSelectedId(null)
       }
     }
-  };
+  }
 
+  // Clamping des bboxes hors limites
   useEffect(() => {
-    const rects = rectangles.slice();
+    const rects = rectangles.slice()
     for (let i = 0; i < rects.length; i++) {
       if (rects[i].width < 0) {
         rects[i].width = rects[i].width * -1
@@ -85,35 +107,98 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     <Stage
       width={W}
       height={H}
-      onMouseDown={checkDeselect}
-      onContextMenu={(e) => { e.evt.preventDefault(); }}
+      x={stagePos.x}
+      y={stagePos.y}
+      scaleX={zoom}
+      scaleY={zoom}
+      style={{ cursor: isPanning ? 'grabbing' : 'crosshair' }}
+
+      // ── Zoom molette, centré sur le curseur ──────────────────────────────
+      onWheel={(e: any) => {
+        e.evt.preventDefault()
+        const stage    = e.target.getStage()
+        const oldZoom  = stage.scaleX()
+        const pointer  = stage.getPointerPosition()
+        const origin   = { x: (pointer.x - stage.x()) / oldZoom,
+                           y: (pointer.y - stage.y()) / oldZoom }
+        const newZoom  = e.evt.deltaY < 0
+          ? Math.min(oldZoom * ZOOM_FACTOR, ZOOM_MAX)
+          : Math.max(oldZoom / ZOOM_FACTOR, ZOOM_MIN)
+        setZoom(newZoom)
+        setStagePos({
+          x: pointer.x - origin.x * newZoom,
+          y: pointer.y - origin.y * newZoom,
+        })
+      }}
+
+      // ── Double-clic : reset zoom ─────────────────────────────────────────
+      onDblClick={() => {
+        setZoom(1.0)
+        setStagePos({ x: 0, y: 0 })
+      }}
+
+      // ── MouseDown : bouton milieu = pan, gauche = dessin/deselect ────────
+      onMouseDown={(e: any) => {
+        if (e.evt.button === 1) {
+          e.evt.preventDefault()
+          const p = e.target.getStage().getPointerPosition()
+          panStart.current = { mx: p.x, my: p.y,
+                               sx: e.target.getStage().x(),
+                               sy: e.target.getStage().y() }
+          setIsPanning(true)
+          return
+        }
+        if (e.evt.button === 0) checkDeselect(e)
+      }}
+
+      onContextMenu={(e) => { e.evt.preventDefault() }}
+
+      // ── MouseMove : pan ou mise à jour crosshair + rect en cours ─────────
       onMouseMove={(e: any) => {
-        const pointer = e.target.getStage()?.getPointerPosition()
-        if (pointer) {
-          setMousePos({ x: pointer.x, y: pointer.y })
-          if (adding !== null) {
-            setAdding([adding[0], adding[1], pointer.x, pointer.y])
-          }
+        const stage   = e.target.getStage()
+        const pointer = stage.getPointerPosition()
+
+        if (panStart.current) {
+          setStagePos({
+            x: panStart.current.sx + (pointer.x - panStart.current.mx),
+            y: panStart.current.sy + (pointer.y - panStart.current.my),
+          })
+          return
+        }
+
+        const sc = toStage(stage, pointer.x, pointer.y)
+        setMousePos(sc)
+        if (adding !== null) {
+          setAdding([adding[0], adding[1], sc.x, sc.y])
         }
       }}
+
       onMouseLeave={() => {
         setAdding(null)
         setMousePos(null)
+        panStart.current = null
+        setIsPanning(false)
       }}
-      onMouseUp={() => {
+
+      // ── MouseUp : fin de pan ou création de bbox ─────────────────────────
+      onMouseUp={(e: any) => {
+        if (e.evt.button === 1) {
+          panStart.current = null
+          setIsPanning(false)
+          return
+        }
         if (adding !== null) {
-          const rects = rectangles.slice();
-          const new_id = Date.now().toString()
+          const rects  = rectangles.slice()
           rects.push({
-            x: adding[0] / scale,
-            y: adding[1] / scale,
-            width: (adding[2] - adding[0]) / scale,
+            x:      adding[0] / scale,
+            y:      adding[1] / scale,
+            width:  (adding[2] - adding[0]) / scale,
             height: (adding[3] - adding[1]) / scale,
-            label: label,
+            label,
             stroke: color_map[label],
-            id: new_id
+            id:     Date.now().toString()
           })
-          setRectangles(rects);
+          setRectangles(rects)
           setAdding(null)
         }
       }}
@@ -133,23 +218,23 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
             strokeWidth={strokeWidth}
             isSelected={rect.id === selectedId}
             onClick={() => {
-              setSelectedId(rect.id);
-              const rects = rectangles.slice();
-              const lastIndex = rects.length - 1;
-              const lastItem = rects[lastIndex];
-              rects[lastIndex] = rects[i];
-              rects[i] = lastItem;
-              setRectangles(rects);
+              setSelectedId(rect.id)
+              const rects     = rectangles.slice()
+              const lastIndex = rects.length - 1
+              const lastItem  = rects[lastIndex]
+              rects[lastIndex] = rects[i]
+              rects[i]         = lastItem
+              setRectangles(rects)
               setLabel(rect.label)
             }}
             onDelete={() => {
-              setRectangles(rectangles.filter((r) => r.id !== rect.id));
-              setSelectedId(null);
+              setRectangles(rectangles.filter((r) => r.id !== rect.id))
+              setSelectedId(null)
             }}
             onChange={(newAttrs: any) => {
-              const rects = rectangles.slice();
-              rects[i] = newAttrs;
-              setRectangles(rects);
+              const rects = rectangles.slice()
+              rects[i]    = newAttrs
+              setRectangles(rects)
             }}
           />
         ))}
@@ -157,7 +242,7 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
           <Rect
             fill={color_map[label] + '4D'}
             x={adding[0]} y={adding[1]}
-            width={adding[2] - adding[0]}
+            width={adding[2]  - adding[0]}
             height={adding[3] - adding[1]}
           />
         )}
@@ -166,20 +251,18 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
       {/* Couche crosshair — non-interactive, toujours au-dessus */}
       {mousePos !== null && (
         <Layer listening={false}>
-          {/* Ligne verticale — ombre sombre puis trait blanc */}
           <Line points={[mousePos.x, 0, mousePos.x, H]}
-                stroke="rgba(0,0,0,0.45)" strokeWidth={3} dash={[6, 6]} />
+                stroke="rgba(0,0,0,0.45)" strokeWidth={3 / zoom} dash={[6 / zoom, 6 / zoom]} />
           <Line points={[mousePos.x, 0, mousePos.x, H]}
-                stroke="rgba(255,255,255,0.9)" strokeWidth={1} dash={[6, 6]} />
-          {/* Ligne horizontale */}
+                stroke="rgba(255,255,255,0.9)" strokeWidth={1 / zoom} dash={[6 / zoom, 6 / zoom]} />
           <Line points={[0, mousePos.y, W, mousePos.y]}
-                stroke="rgba(0,0,0,0.45)" strokeWidth={3} dash={[6, 6]} />
+                stroke="rgba(0,0,0,0.45)" strokeWidth={3 / zoom} dash={[6 / zoom, 6 / zoom]} />
           <Line points={[0, mousePos.y, W, mousePos.y]}
-                stroke="rgba(255,255,255,0.9)" strokeWidth={1} dash={[6, 6]} />
+                stroke="rgba(255,255,255,0.9)" strokeWidth={1 / zoom} dash={[6 / zoom, 6 / zoom]} />
         </Layer>
       )}
     </Stage>
-  );
-};
+  )
+}
 
-export default BBoxCanvas;
+export default BBoxCanvas
