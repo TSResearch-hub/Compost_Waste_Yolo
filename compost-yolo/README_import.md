@@ -42,10 +42,23 @@ Les cas possibles dans `class_map` :
 ### 3. Importer puis splitter
 
 ```bash
-python scripts/import_dataset.py --source ~/stage/datasets/<nom> \
-    --mapping configs/import_<nom>.yaml --output data/raw/<nom>
+#Importer
+python scripts/import_dataset.py \
+    --source ~/stage/datasets/<nom> \
+    --mapping configs/import_<nom>.yaml \
+    --output data/raw/<nom>
+
+#splitter (a faire sur collab directement)
+
 python scripts/prepare_dataset.py --source data/raw/<nom>
-```
+
+
+### ziper les datasets pour envoyer sur le drive
+
+cd ~/stage/Compost_Waste_Yolo/compost-yolo/data/raw/organic
+zip -r /mnt/c/Users/ikche/Desktop/datasets_drive/dataset_raw_organic.zip images labels groups.csv
+
+
 
 `import_dataset.py` réécrit les ids des labels, aplatit les noms de fichiers
 et génère `groups.csv` ; `prepare_dataset.py` fusionne le split d'origine et

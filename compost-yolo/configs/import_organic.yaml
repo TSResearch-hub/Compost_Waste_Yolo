@@ -1,0 +1,90 @@
+# Correspondance pour « organic waste detection » (fork ali-ikched de
+# organic-waste-detection-djjjc). Licence : Public Domain (aucune contrainte).
+# url : https://universe.roboflow.com/ali-ikched/organic-waste-detection-djjjc
+#
+# But : renforcer la classe Organique (sous-représentée, ~8 instances).
+# Les 32 classes source sont toutes des déchets alimentaires -> Organique.
+#
+# Labels MIXTES dans l'export (certaines annotations sont des boîtes à 5 champs,
+# d'autres des polygones) -> on déclare yolo-seg, le seul parseur qui gère les
+# deux (les polygones sont convertis en boîtes englobantes, les boîtes gardées).
+format: yolo-seg
+
+# Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
+# - « Organique » est ici une catégorie de MATIÈRE, pas une garantie de
+#   compostabilité : les os (Bone, Bone-fish) et coquilles (Egg-shell,
+#   Mussel-shell, Shrimp-shell) sont de la matière organique -> Organique,
+#   même si en compostage réel ils sont lents/contestés.
+# - Other-waste : fourre-tout du dataset ; comme l'ensemble est dédié à
+#   l'organique, on le rattache à Organique. Le basculer en null si une
+#   inspection montre qu'il contient des intrus non organiques.
+
+# Noms exacts du data.yaml de l'export (l'ordre = les ids)
+source_names:
+  - Apple
+  - Apple-core
+  - Apple-peel
+  - Bone
+  - Bone-fish
+  - Bread
+  - Bun
+  - Egg-hard
+  - Egg-scramble
+  - Egg-shell
+  - Egg-steam
+  - Egg-yolk
+  - Fish
+  - Meat
+  - Mussel
+  - Mussel-shell
+  - Noodle
+  - Orange
+  - Orange-peel
+  - Other-waste
+  - Pancake
+  - Pasta
+  - Pear
+  - Pear-core
+  - Pear-peel
+  - Potato
+  - Rice
+  - Shrimp
+  - Shrimp-shell
+  - Tofu
+  - Tomato
+  - Vegetable
+
+# Tout -> Organique (dataset 100 % alimentaire/organique)
+class_map:
+  Apple: Organique
+  Apple-core: Organique
+  Apple-peel: Organique
+  Bone: Organique
+  Bone-fish: Organique
+  Bread: Organique
+  Bun: Organique
+  Egg-hard: Organique
+  Egg-scramble: Organique
+  Egg-shell: Organique
+  Egg-steam: Organique
+  Egg-yolk: Organique
+  Fish: Organique
+  Meat: Organique
+  Mussel: Organique
+  Mussel-shell: Organique
+  Noodle: Organique
+  Orange: Organique
+  Orange-peel: Organique
+  Other-waste: Organique
+  Pancake: Organique
+  Pasta: Organique
+  Pear: Organique
+  Pear-core: Organique
+  Pear-peel: Organique
+  Potato: Organique
+  Rice: Organique
+  Shrimp: Organique
+  Shrimp-shell: Organique
+  Tofu: Organique
+  Tomato: Organique
+  Vegetable: Organique
