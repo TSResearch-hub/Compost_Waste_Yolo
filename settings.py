@@ -12,13 +12,13 @@ DETECTION_MODEL = MODEL_DIR / 'best.pt'
 
 WEBCAM_PATH = 0
 
-COMPOSTABLE = ['Compost'] 
+COMPOSTABLE = ['Organique']
 
-NON_COMPOSTABLE = ['NonCompost']
+NON_COMPOSTABLE = ['Plastique', 'Carton', 'Papier', 'Composite']
 
-MATIERE_RISQUEE = ['Mrisq']
+MATIERE_RISQUEE = ['Métal', 'Aluminium']
 
-DANGEREUX = ['Dgrx']
+DANGEREUX = ['Verre', 'Céramique']
 
-RECYCLABLE = COMPOSTABLE
-NON_RECYCLABLE = NON_COMPOSTABLE
+RECYCLABLE = NON_COMPOSTABLE
+NON_RECYCLABLE = COMPOSTABLE

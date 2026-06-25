@@ -69,8 +69,10 @@ const Detection = ({ args, theme }: ComponentProps) => {
   );
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [label, setLabel] = useState(label_list[0])
-  const [bboxOpacity, setBboxOpacity] = useState(1.0)
-  const [bboxStroke,  setBboxStroke]  = useState(line_width)
+  const [bboxOpacity,  setBboxOpacity]  = useState(1.0)
+  const [bboxStroke,   setBboxStroke]   = useState(line_width)
+  const [brightness,   setBrightness]   = useState(0)
+  const [contrast,     setContrast]     = useState(0)
 
   const handleClassSelect = (l: string) => {
     setLabel(l)
@@ -95,7 +97,7 @@ const Detection = ({ args, theme }: ComponentProps) => {
       const reserved = isMobile ? 0 : SIDE_PANEL_W + GAP
       const availableWidth = Math.max(100, window.innerWidth - reserved)
       const scale_ratio = availableWidth / image_size[0]
-      // Pas d'upscaling : l'image source est déjà à 1280 px max, pas besoin d'agrandir
+      // Downscale si l'image dépasse la largeur dispo ; jamais d'upscaling
       setScale(Math.min(scale_ratio, 1.0))
       const imageHeight = image_size[1] * Math.min(scale_ratio, 1.0)
       // Sur mobile le panneau de contrôle est empilé en dessous (~160 px)
@@ -161,6 +163,8 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 image_size={image_size}
                 strokeWidth={bboxStroke}
                 opacity={bboxOpacity}
+                brightness={brightness}
+                contrast={contrast}
               />
             </Box>
 
@@ -176,13 +180,13 @@ const Detection = ({ args, theme }: ComponentProps) => {
 
               {/* Boutons de classe + Valider côte à côte */}
               <Flex gap={3} align="stretch">
-                <SimpleGrid columns={{ base: 2, md: 1 }} gap={3} flex="1">
+                <SimpleGrid columns={2} gap={2} flex="1">
                   {label_list.map((l) => {
                     const isActive = label === l
                     return (
                       <Button
                         key={l}
-                        size='md'
+                        size='sm'
                         bg={isActive ? color_map[l] : 'transparent'}
                         borderColor={color_map[l]}
                         borderWidth='2px'
@@ -191,6 +195,7 @@ const Detection = ({ args, theme }: ComponentProps) => {
                         onClick={() => handleClassSelect(l)}
                         width='100%'
                         fontWeight={isActive ? 'bold' : 'normal'}
+                        fontSize='xs'
                       >
                         {l}
                       </Button>
@@ -237,6 +242,32 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 </Slider>
                 <Text fontSize='xs' color='gray.400' minW="30px" textAlign="right">
                   {bboxStroke}px
+                </Text>
+              </Flex>
+
+              {/* Slider luminosité */}
+              <Flex align="center" gap={2} mt={2}>
+                <Text fontSize='xs' color='gray.500' minW="50px">Lumière</Text>
+                <Slider flex="1" value={brightness} min={-0.5} max={0.5} step={0.02}
+                        onChange={(v) => setBrightness(v)}>
+                  <SliderTrack h="3px"><SliderFilledTrack /></SliderTrack>
+                  <SliderThumb boxSize={3} />
+                </Slider>
+                <Text fontSize='xs' color='gray.400' minW="30px" textAlign="right">
+                  {brightness >= 0 ? '+' : ''}{Math.round(brightness * 100)}
+                </Text>
+              </Flex>
+
+              {/* Slider contraste */}
+              <Flex align="center" gap={2} mt={2}>
+                <Text fontSize='xs' color='gray.500' minW="50px">Contraste</Text>
+                <Slider flex="1" value={contrast} min={-50} max={50} step={2}
+                        onChange={(v) => setContrast(v)}>
+                  <SliderTrack h="3px"><SliderFilledTrack /></SliderTrack>
+                  <SliderThumb boxSize={3} />
+                </Slider>
+                <Text fontSize='xs' color='gray.400' minW="30px" textAlign="right">
+                  {contrast >= 0 ? '+' : ''}{contrast}
                 </Text>
               </Flex>
 

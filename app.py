@@ -54,10 +54,15 @@ div[data-testid="stButton"] > button[kind="primary"] {
 /* ══ BOUTONS DE CLASSE — massifs pour sélection rapide sans erreur ════════
    height: 60px garanti via min-height.
    Ciblés via aria-label que Streamlit expose sur chaque bouton.           */
-button[aria-label="🔴 Dgrx"],
-button[aria-label="🟠 Mrisq"],
-button[aria-label="🔵 NonCompost"],
-button[aria-label="🟢 Compost"] {
+button[aria-label="Plastique"],
+button[aria-label="Métal"],
+button[aria-label="Carton"],
+button[aria-label="Aluminium"],
+button[aria-label="Céramique"],
+button[aria-label="Organique"],
+button[aria-label="Papier"],
+button[aria-label="Verre"],
+button[aria-label="Composite"] {
     min-height: 60px !important;
     font-size: 1.15rem !important;
     font-weight: 700 !important;
@@ -280,15 +285,27 @@ def _reset_canvas_state(canvas_key):
         st.session_state.pop(f"{canvas_key}{suffix}", None)
 
 
-def _save_annotation(pil_img, detection_result, w_img, h_img):
+def _save_annotation(pil_img, detection_result, w_img, h_img, original_name=None, raw_bytes=None):
     """
     Sauvegarde l'image et le fichier YOLO depuis le résultat du composant detection().
     detection_result : liste de {'bbox': [x, y, w, h], 'label_id': int, 'label': str}
     Les coordonnées bbox sont en pixels dans l'espace image original.
+    Si raw_bytes est fourni, les bytes originaux sont écrits tels quels (sans réencodage).
     """
     img_dir, lbl_dir = _prepare_save_dirs()
-    timestamp = int(time.time())
-    pil_img.save(img_dir / f"cap_{timestamp}.jpg")
+
+    if original_name:
+        stem = Path(original_name).stem
+        ext  = Path(original_name).suffix.lower() or ".jpg"
+    else:
+        stem = f"cap_{int(time.time())}"
+        ext  = ".jpg"
+
+    if raw_bytes is not None:
+        with open(img_dir / f"{stem}{ext}", "wb") as fout:
+            fout.write(raw_bytes)
+    else:
+        pil_img.save(img_dir / f"{stem}{ext}")
 
     yolo_lines = []
     for item in detection_result:
@@ -301,7 +318,7 @@ def _save_annotation(pil_img, detection_result, w_img, h_img):
             f"{item['label_id']} {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}"
         )
 
-    with open(lbl_dir / f"cap_{timestamp}.txt", "w") as f:
+    with open(lbl_dir / f"{stem}.txt", "w") as f:
         f.write("\n".join(yolo_lines))
 
 
@@ -338,7 +355,7 @@ def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
 # ÉDITEUR D'ANNOTATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=True, offline_mode=False):
+def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=True, offline_mode=False, original_name=None, raw_bytes=None):
     """
     Éditeur d'annotation YOLO basé sur streamlit_image_annotation (Konva).
 
@@ -391,7 +408,7 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
 
     # ── Sauvegarde déclenchée par "Complete" dans le composant ────────────────
     if result is not None:
-        _save_annotation(pil_img, result, w_img, h_img)
+        _save_annotation(pil_img, result, w_img, h_img, original_name=original_name, raw_bytes=raw_bytes)
         st.toast("Annotation sauvegardée !", icon="✅")
         _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
 
@@ -509,10 +526,10 @@ with tab_offline:
                 # pour ne pas bloquer l'interface sur un grand lot.
                 items = []
                 for f in uploaded_files:
-                    nparr = np.frombuffer(f.read(), np.uint8)
+                    raw_bytes = f.getvalue()
+                    nparr = np.frombuffer(raw_bytes, np.uint8)
                     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    img_resized = helper.resize_keep_ratio(img_bgr)
-                    items.append({"image": img_resized, "name": f.name, "res": None})
+                    items.append({"image": img_bgr, "name": f.name, "res": None, "raw_bytes": raw_bytes})
                 st.session_state["offline_queue"] = items
                 _reset_canvas_state("canvas_offline")
                 st.rerun()
@@ -554,6 +571,8 @@ with tab_offline:
             canvas_key="canvas_offline",
             exit_mode_annotation=True,
             offline_mode=True,
+            original_name=current.get("name"),
+            raw_bytes=current.get("raw_bytes"),
         )
 
         # Nettoyage du compteur total quand la file est épuisée après rerun

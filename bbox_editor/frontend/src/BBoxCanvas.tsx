@@ -15,7 +15,9 @@ export interface BBoxCanvasLayerProps {
   image_size: number[],
   image: any,
   strokeWidth: number,
-  opacity: number
+  opacity: number,
+  brightness: number,
+  contrast: number
 }
 
 const ZOOM_FACTOR = 1.12
@@ -35,8 +37,20 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     image_size,
     image,
     strokeWidth,
-    opacity
+    opacity,
+    brightness,
+    contrast
   }: BBoxCanvasLayerProps = props
+
+  const imageRef = useRef<Konva.Image | null>(null)
+
+  useEffect(() => {
+    const node = imageRef.current
+    if (node && image) {
+      node.cache()
+      node.getLayer()?.batchDraw()
+    }
+  }, [image, brightness, contrast])
 
   const [adding,   setAdding]   = useState<number[] | null>(null)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
@@ -207,7 +221,15 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     >
       {/* Couche image */}
       <Layer>
-        <Image image={image} scaleX={scale} scaleY={scale} />
+        <Image
+          ref={imageRef}
+          image={image}
+          scaleX={scale}
+          scaleY={scale}
+          filters={[Konva.Filters.Brighten, Konva.Filters.Contrast] as any}
+          brightness={brightness}
+          contrast={contrast}
+        />
       </Layer>
 
       {/* Couche bboxes + rect en cours de dessin */}

@@ -6,10 +6,15 @@ import settings
 from PIL import Image
 
 CLASS_COLORS = {
-    "Dgrx": "#c23232",
-    "Mrisq": "#ff8c00",
-    "NonCompost": "#5e80ad",
-    "Compost": "#16b939",
+    "Plastique":  "#1E88E5",
+    "Métal":      "#757575",
+    "Carton":     "#795548",
+    "Aluminium":  "#90A4AE",
+    "Céramique":  "#FF7043",
+    "Organique":  "#43A047",
+    "Papier":     "#00ACC1",
+    "Verre":      "#00897B",
+    "Composite":  "#8E24AA",
 }
 
 
@@ -213,7 +218,17 @@ def get_canvas_initial_data(results):
     return initial_drawing
 
 
-CLASS_MAP = {"Dgrx": 0, "Mrisq": 1, "NonCompost": 2, "Compost": 3}
+CLASS_MAP = {
+    "Plastique": 0,
+    "Métal":     1,
+    "Carton":    2,
+    "Aluminium": 3,
+    "Céramique": 4,
+    "Organique": 5,
+    "Papier":    6,
+    "Verre":     7,
+    "Composite": 8,
+}
 
 
 def get_detection_initial_data(results):
