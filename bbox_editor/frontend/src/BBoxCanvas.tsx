@@ -153,9 +153,9 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
         setStagePos({ x: 0, y: 0 })
       }}
 
-      // ── MouseDown : bouton milieu = pan, gauche = dessin/deselect ────────
+      // ── MouseDown : bouton droit = pan, gauche = dessin/deselect ─────────
       onMouseDown={(e: any) => {
-        if (e.evt.button === 1) {
+        if (e.evt.button === 2) {
           e.evt.preventDefault()
           const p = e.target.getStage().getPointerPosition()
           panStart.current = { mx: p.x, my: p.y,
@@ -198,7 +198,7 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
 
       // ── MouseUp : fin de pan ou création de bbox ─────────────────────────
       onMouseUp={(e: any) => {
-        if (e.evt.button === 1) {
+        if (e.evt.button === 2) {
           panStart.current = null
           setIsPanning(false)
           return

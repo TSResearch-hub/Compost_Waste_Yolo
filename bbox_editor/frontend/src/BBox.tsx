@@ -37,9 +37,11 @@ const BBox = (props: BBoxProps) => {
       {moving || <Text text={rectProps.label} x={rectProps.x * scale + 5} y={rectProps.y * scale + 5} fontSize={15} fill={rectProps.stroke} />}
       <Rect
         onClick={onClick}
-        onContextMenu={(e) => {
-          e.evt.preventDefault();
-          onDelete();
+        onMouseDown={(e: any) => {
+          if (e.evt.button === 1) {
+            e.evt.preventDefault()
+            onDelete()
+          }
         }}
         ref={shapeRef}
         {...rectProps}
