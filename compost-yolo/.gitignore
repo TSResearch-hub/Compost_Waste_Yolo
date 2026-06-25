@@ -4,6 +4,7 @@ data/**
 !data/**/.gitkeep
 runs/**
 !runs/.gitkeep
+crop_preview/
 *.pt
 *.onnx
 *_ncnn_model/

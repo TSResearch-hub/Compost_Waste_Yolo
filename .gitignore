@@ -11,5 +11,5 @@ bbox_editor/frontend/node_modules/
 images/
 video/
 
-# Données annotées (décommenter si tu ne veux pas les versionner)
-# dataset_recolte/
+# Données annotées (non versionnées : volumineuses, vivent dans datasets/)
+dataset_recolte/

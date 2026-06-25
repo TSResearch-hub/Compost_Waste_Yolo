@@ -5,11 +5,12 @@
 #
 # Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
 # - Aerosol -> Metal (certains sprays sont en alu)
-# - Drink carton -> Carton (briques multicouches carton/plastique/alu)
+# - Drink carton -> Composite (brique Tetra Pak : carton + plastique + alu)
+# - Crisp packet -> Composite (film plastique métallisé : plastique + alu)
 # - Styrofoam/Foam -> Plastique (polystyrène)
-# - Crisp packet -> Plastique (film plastique métallisé)
-# - Tissues -> null (papier, mais visuellement trop éloigné du carton ;
-#   et souvent toléré dans le compost)
+# - PAPIER (Normal/Magazine/Wrapping paper, Paper bag/cup/straw, Tissues) -> null :
+#   compostable, donc ignoré. Carton (cartons épais) reste un intrus.
+# - Blister packs / foam pourraient aussi être Composite si besoin.
 
 # Export Roboflow en polygones de segmentation -> convertis en boîtes à l'import
 format: yolo-seg
@@ -87,20 +88,21 @@ class_map:
   Metal lid: Metal
   Scrap metal: Metal
   Aerosol: Metal
-  # --- Carton / papier ---
+  # --- Carton (cartons épais seulement ; le papier fin va en null) ---
   Corrugated carton: Carton
   Other carton: Carton
-  Drink carton: Carton
   Egg carton: Carton
   Meal carton: Carton
   Pizza box: Carton
   Toilet tube: Carton
-  Normal paper: Carton
-  Magazine paper: Carton
-  Wrapping paper: Carton
-  Paper bag: Carton
-  Paper cup: Carton
-  Paper straw: Carton
+  # --- Verre ---
+  Glass bottle: Verre
+  Glass cup: Verre
+  Glass jar: Verre
+  Broken glass: Verre
+  # --- Composite (multi-matériaux) ---
+  Drink carton: Composite
+  Crisp packet: Composite
   # --- Plastique ---
   Clear plastic bottle: Plastique
   Other plastic bottle: Plastique
@@ -123,21 +125,21 @@ class_map:
   Spread tub: Plastique
   Squeezable tube: Plastique
   Tupperware: Plastique
-  Crisp packet: Plastique
   Styrofoam piece: Plastique
   Foam cup: Plastique
   Foam food container: Plastique
-  # --- Organique = fond, on ignore (détecteur d'intrus uniquement) ---
+  # --- Ignorés : PAPIER (compostable) + organique + hors-projet ---
+  Normal paper: null
+  Magazine paper: null
+  Wrapping paper: null
+  Paper bag: null
+  Paper cup: null
+  Paper straw: null
+  Tissues: null
   Food waste: null
-  # --- Ignorées (pas de classe correspondante au projet) ---
-  Glass bottle: null
-  Glass cup: null
-  Glass jar: null
-  Broken glass: null
   Battery: null
   Cigarette: null
   Shoe: null
   Rope - strings: null
   Carded blister pack: null
-  Tissues: null
   Unlabeled litter: null

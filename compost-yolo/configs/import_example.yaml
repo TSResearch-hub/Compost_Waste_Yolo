@@ -20,8 +20,8 @@ source_names:
 # si plus rien ne reste sur une image, elle est gardée comme négative.
 class_map:
   cardboard: Carton
-  glass: null          # pas de classe Verre dans le projet
+  glass: Verre
   metal: Metal
-  paper: Carton        # exemple de fusion de deux classes source
+  paper: null          # papier = compostable -> ignoré (Carton = cartons épais)
   plastic: Plastique
   trash: null

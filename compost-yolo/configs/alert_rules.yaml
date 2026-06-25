@@ -11,3 +11,5 @@ intruder_thresholds:
   Carton: 0.50
   Aluminium: 0.40
   Ceramique: 0.50
+  Verre: 0.40
+  Composite: 0.50

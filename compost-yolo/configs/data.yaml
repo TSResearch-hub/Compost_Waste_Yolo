@@ -1,7 +1,8 @@
 # SEUL endroit où les classes sont définies.
 # Détecteur d'INTRUS uniquement : on ne détecte que les matériaux non
-# compostables. L'organique n'est PAS une classe — c'est le fond (background),
-# géré implicitement par YOLO (une image de compost sans intrus = négatif).
+# compostables. L'organique ET le papier ne sont PAS des classes — ils sont
+# compostables, donc fond (background) géré implicitement par YOLO (une image
+# sans intrus = négatif).
 # Pour modifier les classes : éditer cette liste, ré-exporter les annotations
 # depuis l'interface, puis relancer prepare_dataset.py.
 # L'ordre compte : l'index dans cette liste = l'id de classe dans les labels YOLO.
@@ -11,3 +12,5 @@ names:
   - Carton
   - Aluminium
   - Ceramique
+  - Verre
+  - Composite
