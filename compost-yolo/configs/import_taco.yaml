@@ -127,8 +127,8 @@ class_map:
   Styrofoam piece: Plastique
   Foam cup: Plastique
   Foam food container: Plastique
-  # --- Organique ---
-  Food waste: Organique
+  # --- Organique = fond, on ignore (détecteur d'intrus uniquement) ---
+  Food waste: null
   # --- Ignorées (pas de classe correspondante au projet) ---
   Glass bottle: null
   Glass cup: null

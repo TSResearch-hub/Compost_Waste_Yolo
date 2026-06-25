@@ -1,6 +1,7 @@
 # Règles d'alerte au niveau image.
-# Les classes listées ici sont considérées comme INTRUSES (tout ce qui n'est
-# pas listé — ex. Organique — est ignoré par la logique d'alerte).
+# Les classes listées ici sont considérées comme INTRUSES (une classe non
+# listée serait ignorée par la logique d'alerte). Le fond organique n'est pas
+# une classe (détecteur d'intrus uniquement) : il ne déclenche jamais d'alerte.
 # Valeur = seuil de confiance minimal pour qu'une détection déclenche une alerte.
 # Seuils provisoires, à calibrer avec : python scripts/evaluate.py --sweep-thresholds
 

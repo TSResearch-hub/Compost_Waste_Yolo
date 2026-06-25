@@ -1,23 +1,15 @@
+# ============================================================================
+# OBSOLÈTE — NE PLUS IMPORTER.
+# Ce dataset ne contient QUE de l'organique. Depuis le passage au détecteur
+# d'INTRUS uniquement (l'organique est le fond, plus une classe — voir
+# configs/data.yaml), il n'apporte plus rien : toutes ses classes sont mappées
+# à null. L'importer ajouterait 6734 images négatives de domaine web (au pire
+# nuisible). Conservé pour mémoire/traçabilité seulement.
+# ============================================================================
 # Correspondance pour « organic waste detection » (fork ali-ikched de
-# organic-waste-detection-djjjc). Licence : Public Domain (aucune contrainte).
+# organic-waste-detection-djjjc). Licence : Public Domain.
 # url : https://universe.roboflow.com/ali-ikched/organic-waste-detection-djjjc
-#
-# But : renforcer la classe Organique (sous-représentée, ~8 instances).
-# Les 32 classes source sont toutes des déchets alimentaires -> Organique.
-#
-# Labels MIXTES dans l'export (certaines annotations sont des boîtes à 5 champs,
-# d'autres des polygones) -> on déclare yolo-seg, le seul parseur qui gère les
-# deux (les polygones sont convertis en boîtes englobantes, les boîtes gardées).
 format: yolo-seg
-
-# Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
-# - « Organique » est ici une catégorie de MATIÈRE, pas une garantie de
-#   compostabilité : les os (Bone, Bone-fish) et coquilles (Egg-shell,
-#   Mussel-shell, Shrimp-shell) sont de la matière organique -> Organique,
-#   même si en compostage réel ils sont lents/contestés.
-# - Other-waste : fourre-tout du dataset ; comme l'ensemble est dédié à
-#   l'organique, on le rattache à Organique. Le basculer en null si une
-#   inspection montre qu'il contient des intrus non organiques.
 
 # Noms exacts du data.yaml de l'export (l'ordre = les ids)
 source_names:
@@ -56,35 +48,35 @@ source_names:
 
 # Tout -> Organique (dataset 100 % alimentaire/organique)
 class_map:
-  Apple: Organique
-  Apple-core: Organique
-  Apple-peel: Organique
-  Bone: Organique
-  Bone-fish: Organique
-  Bread: Organique
-  Bun: Organique
-  Egg-hard: Organique
-  Egg-scramble: Organique
-  Egg-shell: Organique
-  Egg-steam: Organique
-  Egg-yolk: Organique
-  Fish: Organique
-  Meat: Organique
-  Mussel: Organique
-  Mussel-shell: Organique
-  Noodle: Organique
-  Orange: Organique
-  Orange-peel: Organique
-  Other-waste: Organique
-  Pancake: Organique
-  Pasta: Organique
-  Pear: Organique
-  Pear-core: Organique
-  Pear-peel: Organique
-  Potato: Organique
-  Rice: Organique
-  Shrimp: Organique
-  Shrimp-shell: Organique
-  Tofu: Organique
-  Tomato: Organique
-  Vegetable: Organique
+  Apple: null
+  Apple-core: null
+  Apple-peel: null
+  Bone: null
+  Bone-fish: null
+  Bread: null
+  Bun: null
+  Egg-hard: null
+  Egg-scramble: null
+  Egg-shell: null
+  Egg-steam: null
+  Egg-yolk: null
+  Fish: null
+  Meat: null
+  Mussel: null
+  Mussel-shell: null
+  Noodle: null
+  Orange: null
+  Orange-peel: null
+  Other-waste: null
+  Pancake: null
+  Pasta: null
+  Pear: null
+  Pear-core: null
+  Pear-peel: null
+  Potato: null
+  Rice: null
+  Shrimp: null
+  Shrimp-shell: null
+  Tofu: null
+  Tomato: null
+  Vegetable: null

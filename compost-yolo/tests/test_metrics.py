@@ -10,7 +10,7 @@ from compost_detection.metrics import (
     per_class_metrics,
 )
 
-CLASS_NAMES = {0: "Organique", 1: "Plastique"}
+CLASS_NAMES = {0: "Carton", 1: "Plastique"}
 BOX = (0.5, 0.5, 0.2, 0.2)
 BOX_FAR = (0.1, 0.1, 0.1, 0.1)  # IoU nul avec BOX
 RULES = {"Plastique": 0.40}
@@ -74,7 +74,7 @@ def test_image_alert_confusion_all_cases():
 def test_is_alert_threshold_per_class():
     assert is_alert([("Plastique", 0.5)], RULES)
     assert not is_alert([("Plastique", 0.3)], RULES)  # sous le seuil
-    assert not is_alert([("Organique", 0.99)], RULES)  # classe non intruse
+    assert not is_alert([("Carton", 0.99)], RULES)  # classe absente des règles -> ignorée
     assert not is_alert([], RULES)
 
 
