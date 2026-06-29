@@ -34,6 +34,9 @@ def main():
     parser.add_argument("--imgsz", type=int)
     parser.add_argument("--batch", type=int)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--lr0", type=float,
+                        help="learning rate initial (fine-tuning : ex. 0.001 pour un départ doux ; "
+                             "défaut : celui d'Ultralytics, ~0.01)")
     parser.add_argument("--device", help="cpu, 0, 0,1... (défaut : auto-détecté)")
     parser.add_argument("--workers", type=int, default=2,
                         help="processus de chargement des données (défaut : 2 ; le défaut "
@@ -69,6 +72,8 @@ def main():
     if args.resume:
         model.train(resume=True)
     else:
+        # lr0 seulement s'il est fourni (sinon on laisse le défaut Ultralytics)
+        extra = {"lr0": args.lr0} if args.lr0 is not None else {}
         model.train(
             data=str(Path(args.data).resolve()),
             epochs=cfg["epochs"],
@@ -81,11 +86,15 @@ def main():
             # chemin absolu : sinon Ultralytics le préfixe par son runs_dir global
             project=str(Path(args.runs_dir).resolve()),
             name=run_name("train"),
+            **extra,
         )
 
     save_dir = Path(model.trainer.save_dir)
+    used = {**cfg, "data": args.data, "device": device}
+    if args.lr0 is not None:
+        used["lr0"] = args.lr0
     with open(save_dir / "train_config_used.yaml", "w", encoding="utf-8") as f:
-        yaml.safe_dump({**cfg, "data": args.data, "device": device}, f, allow_unicode=True)
+        yaml.safe_dump(used, f, allow_unicode=True)
 
     best = save_dir / "weights" / "best.pt"
     print(f"\nEntraînement terminé. Meilleur modèle : {best}")
