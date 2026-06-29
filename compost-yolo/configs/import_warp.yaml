@@ -1,0 +1,83 @@
+# Correspondance pour WaRP-D (Waste Recycling Plant, partie détection).
+# Source : AIRI-Institute/WaRP — déchets recyclables sur convoyeur de centre de
+# tri (objets qui se chevauchent, déformés, mauvaise lumière → domaine plutôt
+# proche du réel, mais centre de tri ≠ compost).
+# url : https://github.com/AIRI-Institute/WaRP  /  kaggle parohod/warp-waste-recycling-plant-dataset
+# ⚠️ LICENCE : à vérifier sur le repo AIRI avant tout déploiement.
+#
+# Intérêt principal : VERRE (3 types) et CANETTES (classes faibles). Les
+# bouteilles plastique sont gardées pour la diversité (autre site/prise de vue),
+# en sachant que ça accentue le déséquilibre Plastique (à surveiller).
+#
+# Choix de mapping discutables (à documenter) :
+# - cans -> Aluminium (canettes boisson = alu en général ; serait Metal si acier)
+# - juice-cardboard / milk-cardboard -> Carton (briques : matière mixte mais
+#   visuellement un carton ; Composite est réservé aux piles, absentes de WaRP)
+# - detergent-box -> Carton (boîte de lessive carton ; à revoir si plastifiée)
+# - bottle-* -> Plastique (les bouteilles VERRE sont des classes séparées glass-*)
+format: yolo
+
+# Noms exacts de classes.txt (l'ordre = les ids 0..27)
+source_names:
+  - bottle-blue
+  - bottle-green
+  - bottle-dark
+  - bottle-milk
+  - bottle-transp
+  - bottle-multicolor
+  - bottle-yogurt
+  - bottle-oil
+  - cans
+  - juice-cardboard
+  - milk-cardboard
+  - detergent-color
+  - detergent-transparent
+  - detergent-box
+  - canister
+  - bottle-blue-full
+  - bottle-transp-full
+  - bottle-dark-full
+  - bottle-green-full
+  - bottle-multicolorv-full
+  - bottle-milk-full
+  - bottle-oil-full
+  - detergent-white
+  - bottle-blue5l
+  - bottle-blue5l-full
+  - glass-transp
+  - glass-dark
+  - glass-green
+
+class_map:
+  # --- Verre (l'intérêt n°1 de WaRP pour nous) ---
+  glass-transp: Verre
+  glass-dark: Verre
+  glass-green: Verre
+  # --- Aluminium ---
+  cans: Aluminium
+  # --- Carton (boîtes + briques) ---
+  detergent-box: Carton
+  juice-cardboard: Carton    # brique (rangée en Carton, pas Composite)
+  milk-cardboard: Carton     # brique (rangée en Carton, pas Composite)
+  # --- Plastique (toutes les bouteilles + bidons + détergents plastique) ---
+  bottle-blue: Plastique
+  bottle-green: Plastique
+  bottle-dark: Plastique
+  bottle-milk: Plastique
+  bottle-transp: Plastique
+  bottle-multicolor: Plastique
+  bottle-yogurt: Plastique
+  bottle-oil: Plastique
+  bottle-blue-full: Plastique
+  bottle-transp-full: Plastique
+  bottle-dark-full: Plastique
+  bottle-green-full: Plastique
+  bottle-multicolorv-full: Plastique
+  bottle-milk-full: Plastique
+  bottle-oil-full: Plastique
+  bottle-blue5l: Plastique
+  bottle-blue5l-full: Plastique
+  detergent-color: Plastique
+  detergent-transparent: Plastique
+  detergent-white: Plastique
+  canister: Plastique

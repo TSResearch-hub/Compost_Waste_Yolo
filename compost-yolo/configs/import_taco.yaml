@@ -5,12 +5,13 @@
 #
 # Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
 # - Aerosol -> Metal (certains sprays sont en alu)
-# - Drink carton -> Composite (brique Tetra Pak : carton + plastique + alu)
-# - Crisp packet -> Composite (film plastique métallisé : plastique + alu)
+# - Drink carton -> Carton (brique Tetra Pak : matière mixte mais visuellement un
+#   carton ; Composite est réservé aux piles/items dangereux, voir ci-dessous)
+# - Crisp packet -> Plastique (film, visuellement plastique)
+# - Battery -> Composite (Composite = items dangereux/complexes : piles/batteries)
 # - Styrofoam/Foam -> Plastique (polystyrène)
 # - PAPIER (Normal/Magazine/Wrapping paper, Paper bag/cup/straw, Tissues) -> null :
 #   compostable, donc ignoré. Carton (cartons épais) reste un intrus.
-# - Blister packs / foam pourraient aussi être Composite si besoin.
 
 # Export Roboflow en polygones de segmentation -> convertis en boîtes à l'import
 format: yolo-seg
@@ -88,21 +89,21 @@ class_map:
   Metal lid: Metal
   Scrap metal: Metal
   Aerosol: Metal
-  # --- Carton (cartons épais seulement ; le papier fin va en null) ---
+  # --- Carton (cartons épais + briques ; le papier fin va en null) ---
   Corrugated carton: Carton
   Other carton: Carton
   Egg carton: Carton
   Meal carton: Carton
   Pizza box: Carton
   Toilet tube: Carton
+  Drink carton: Carton      # brique Tetra Pak (rangée en Carton, pas Composite)
   # --- Verre ---
   Glass bottle: Verre
   Glass cup: Verre
   Glass jar: Verre
   Broken glass: Verre
-  # --- Composite (multi-matériaux) ---
-  Drink carton: Composite
-  Crisp packet: Composite
+  # --- Composite = items dangereux/complexes (piles/batteries) ---
+  Battery: Composite
   # --- Plastique ---
   Clear plastic bottle: Plastique
   Other plastic bottle: Plastique
@@ -128,6 +129,7 @@ class_map:
   Styrofoam piece: Plastique
   Foam cup: Plastique
   Foam food container: Plastique
+  Crisp packet: Plastique      # film métallisé, visuellement plastique
   # --- Ignorés : PAPIER (compostable) + organique + hors-projet ---
   Normal paper: null
   Magazine paper: null
@@ -137,7 +139,6 @@ class_map:
   Paper straw: null
   Tissues: null
   Food waste: null
-  Battery: null
   Cigarette: null
   Shoe: null
   Rope - strings: null
