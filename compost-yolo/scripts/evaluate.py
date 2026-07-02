@@ -92,7 +92,7 @@ def report_per_class(gts, preds, class_names, iou, conf, out_dir):
     """Étape 3 — rappel/précision par classe, au niveau des BOÎTES.
 
     Chaque prédiction est appariée à une vérité terrain de même classe par
-    IoU >= seuil (voir per_class_metrics). Tableau console + CSV.
+    IoU >= seuil (voir per_class_metrics). Tableau console + CSV + PNG.
     """
     stats = per_class_metrics(gts, preds, class_names, iou, conf)
     print(f"\nMétriques par classe (conf >= {conf}, IoU >= {iou}) :")
@@ -106,7 +106,34 @@ def report_per_class(gts, preds, class_names, iou, conf, out_dir):
         for name, s in stats.items():
             writer.writerow([name, s["n_gt"], s["tp"], s["fp"], s["fn"],
                              s["recall"], s["precision"]])
+    plot_per_class_table(stats, iou, conf, out_dir / "per_class_metrics.png")
     return stats
+
+
+def plot_per_class_table(stats, iou, conf, path):
+    """Le tableau par classe en image (même contenu que le CSV, lisible sans tableur)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    header = ["classe", "n_gt", "tp", "fp", "fn", "rappel", "précision"]
+    rows = [[name, s["n_gt"], s["tp"], s["fp"], s["fn"],
+             fmt(s["recall"]), fmt(s["precision"])] for name, s in stats.items()]
+    fig, ax = plt.subplots(figsize=(7, 0.45 * (len(rows) + 2)))
+    ax.axis("off")
+    table = ax.table(cellText=rows, colLabels=header, loc="center", cellLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 1.4)
+    for j in range(len(header)):
+        table[0, j].set_text_props(weight="bold")
+        table[0, j].set_facecolor("#dbe5f1")
+    ax.set_title(f"Métriques par classe, niveau boîte (conf >= {conf}, IoU >= {iou})",
+                 fontsize=11, pad=12)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Tableau par classe (image) : {path}")
 
 
 def class_image_confusion(gts, preds, class_id, conf):

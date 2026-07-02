@@ -43,6 +43,44 @@ python scripts/export.py --weights runs/train_xxx/weights/best.pt
 
 Chaque script affiche son aide détaillée avec `--help`.
 
+## Fine-tuning sur les captures réelles + éval « compost »
+
+Stratégie recommandée : **pré-entraîner** sur les datasets externes (beaucoup
+d'images, mais autre domaine), puis **fine-tuner** sur les captures réelles (le
+domaine de déploiement). L'évaluation honnête se fait sur un jeu de captures
+**mis de côté** — jamais vu à l'entraînement. On y mesure le modèle **avant**
+(éval B) puis **après** fine-tuning (éval C), avec le *même* `evaluate.py`.
+
+Chaque étape est un script séparé :
+
+```bash
+# 1. SPLIT — pool de fine-tuning + test compost held-out (stratifié par session)
+python scripts/split_captures.py --source data/raw/captures --output data/finetune
+
+# 2. PRÉPARER le pool de fine-tuning (split train/val PAR IMAGE, pas de test interne :
+#    le test compost, c'est data/finetune/captures_test)
+python scripts/prepare_dataset.py --source data/finetune/captures_finetune \
+    --output data/finetune/dataset_finetune --ratios 0.85 0.15 0
+
+# 3. ÉVAL B — le modèle PRÉ-ENTRAÎNÉ sur le test compost (référence avant fine-tuning)
+python scripts/evaluate.py --weights chemin/vers/pretrain_best.pt \
+    --data data/finetune/captures_test/data.yaml --split test
+
+# 4. FINE-TUNER — on repart du pré-entraîné (--model) avec un learning rate bas (--lr0)
+python scripts/train.py --model chemin/vers/pretrain_best.pt \
+    --data data/finetune/dataset_finetune/data.yaml --epochs 30 --lr0 0.001
+
+# 5. ÉVAL C — le modèle FINE-TUNÉ sur le MÊME test compost (après)
+python scripts/evaluate.py --weights runs/train_xxx/weights/best.pt \
+    --data data/finetune/captures_test/data.yaml --split test
+```
+
+Compare les deux `eval_*` (B vs C) : le fine-tuning a-t-il amélioré la détection
+sur le vrai compost ? `split_captures.py` affiche les commandes 2→5 avec les bons
+chemins à la fin de son exécution. Sur GPU local, ajoute `--device 0` (et
+`--batch 4` si mémoire insuffisante) aux étapes 3-5. Le pré-entraînement (étape 0)
+se fait sur Colab (voir plus bas) ou en local avec `train.py` sur les datasets externes.
+
 ## Le point critique : split PAR SESSION
 
 Les images d'une même session de capture (même compost, même éclairage) sont
@@ -144,8 +182,25 @@ Cycle de travail : modifier le code en local → `pytest` → commit + push →
 la session Colab suivante clone automatiquement la dernière version.
 
 Les sessions Colab peuvent sauter : `train.py --backup-dir` copie les
-checkpoints vers Drive toutes les N epochs, et `--resume .../last.pt` reprend
-un run interrompu.
+checkpoints vers Drive toutes les N epochs. Pour reprendre après un crash
+(la VM est vidée : il faut d'abord ré-exécuter les cellules clone / install /
+dataset / montage Drive, puis restaurer le backup avant `--resume`) :
+
+```python
+# retrouver le nom du run sauvegardé (ex. train_02-07_10h15)
+!ls /content/drive/MyDrive/compost/backups
+
+# restaurer le backup -> /content/runs, puis reprendre là où il s'était arrêté
+RUN = "train_02-07_10h15"   # <-- le nom affiché ci-dessus
+!mkdir -p /content/runs
+!cp -r /content/drive/MyDrive/compost/backups/{RUN} /content/runs/
+!python scripts/train.py --resume /content/runs/{RUN}/weights/last.pt \
+    --backup-dir /content/drive/MyDrive/compost/backups --backup-every 10
+```
+
+Garder `--backup-dir` à la reprise, sinon la suite du run n'est plus sauvegardée.
+Inutile de repasser `--data`/`--runs-dir` : le `last.pt` contient déjà toute la
+config du run.
 
 ## Configuration
 

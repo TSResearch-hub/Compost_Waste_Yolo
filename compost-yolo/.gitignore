@@ -18,6 +18,7 @@ __pycache__/
 .pytest_cache/
 
 # IDE / OS / outils locaux
+.ipynb_checkpoints/
 .vscode/
 .idea/
 .DS_Store
