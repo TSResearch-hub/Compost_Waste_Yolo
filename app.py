@@ -403,6 +403,7 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
         use_space=False,
         color_map=helper.CLASS_COLORS,
         token=annot_token,
+        image_name=original_name or "",
         key=f"{canvas_key}_{annot_token}_{clear_counter}",
     )
 
@@ -433,7 +434,7 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
 # ══════════════════════════════════════════════════════════════════════════════
 # ONGLETS PRINCIPAUX
 # ══════════════════════════════════════════════════════════════════════════════
-tab_detection, tab_offline, tab_video = st.tabs(["📹 Détection en direct", "🗂 Annotation hors ligne", "🎬 Extraction vidéo"])
+tab_detection, tab_offline, tab_video, tab_verify = st.tabs(["📹 Détection en direct", "🗂 Annotation hors ligne", "🎬 Extraction vidéo", "🔍 Vérification"])
 
 # ─── ONGLET 1 : DÉTECTION EN DIRECT ──────────────────────────────────────────
 with tab_detection:
@@ -632,3 +633,69 @@ with tab_video:
                 st.rerun()
         finally:
             os.unlink(tmp_path)
+
+# ─── ONGLET 4 : VÉRIFICATION D'ANNOTATION ────────────────────────────────────
+with tab_verify:
+    st.write("Importez une image et son fichier d'annotation YOLO pour vérifier ou corriger les bboxes.")
+
+    col_v1, col_v2 = st.columns(2)
+    with col_v1:
+        v_img = st.file_uploader("Image", type=["jpg", "jpeg", "png"], key="v_img")
+    with col_v2:
+        v_lbl = st.file_uploader("Annotation YOLO (.txt)", type=["txt"], key="v_lbl")
+
+    if v_img is not None and v_lbl is not None:
+        v_raw_bytes = v_img.getvalue()
+        nparr = np.frombuffer(v_raw_bytes, np.uint8)
+        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            st.error("Impossible de décoder l'image.")
+        else:
+            h_img, w_img = img_bgr.shape[:2]
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb).convert("RGB")
+
+            # Parsing du fichier YOLO (coordonnées normalisées → pixels)
+            bboxes, labels_idx = [], []
+            for line in v_lbl.getvalue().decode("utf-8").strip().split("\n"):
+                parts = line.strip().split()
+                if len(parts) == 5:
+                    try:
+                        cid = int(parts[0])
+                        xc, yc, bw, bh = (float(p) for p in parts[1:])
+                        bboxes.append(
+                            [(xc - bw / 2) * w_img, (yc - bh / 2) * h_img, bw * w_img, bh * h_img]
+                        )
+                        labels_idx.append(min(cid, len(LABEL_LIST) - 1))
+                    except ValueError:
+                        pass
+
+            st.caption(
+                f"**{v_img.name}** — {len(bboxes)} annotation(s) chargée(s) · "
+                "Cliquez **Valider** pour sauvegarder les corrections."
+            )
+
+            v_token = st.session_state.get("_verify_token", 0)
+            v_result = st_detection(
+                image=pil_img,
+                label_list=LABEL_LIST,
+                bboxes=bboxes,
+                labels=labels_idx,
+                height=h_img,
+                width=w_img,
+                line_width=2,
+                use_space=False,
+                color_map=helper.CLASS_COLORS,
+                token=v_token,
+                image_name=v_img.name,
+                key=f"verify_{v_img.name}_{v_token}",
+            )
+
+            if v_result is not None:
+                _save_annotation(
+                    pil_img, v_result, w_img, h_img,
+                    original_name=v_img.name, raw_bytes=v_raw_bytes,
+                )
+                st.toast("Annotation corrigée et sauvegardée !", icon="✅")
+                st.session_state["_verify_token"] = v_token + 1
+                st.rerun()

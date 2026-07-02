@@ -17,7 +17,8 @@ export interface BBoxCanvasLayerProps {
   strokeWidth: number,
   opacity: number,
   brightness: number,
-  contrast: number
+  contrast: number,
+  fillOpacity: number,
 }
 
 const ZOOM_FACTOR = 1.12
@@ -39,7 +40,8 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     strokeWidth,
     opacity,
     brightness,
-    contrast
+    contrast,
+    fillOpacity,
   }: BBoxCanvasLayerProps = props
 
   const imageRef = useRef<Konva.Image | null>(null)
@@ -241,6 +243,7 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
             rectProps={rect}
             scale={scale}
             strokeWidth={strokeWidth}
+            fillOpacity={fillOpacity}
             isSelected={rect.id === selectedId}
             onClick={() => {
               setSelectedId(rect.id)

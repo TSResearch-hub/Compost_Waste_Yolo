@@ -42,6 +42,7 @@ def detection(
     use_space: bool = False,
     key: str = None,
     token: int = 0,
+    image_name: str = "",
 ) -> list | None:
     """
     Affiche un éditeur de bounding boxes interactif.
@@ -114,6 +115,7 @@ def detection(
         line_width=line_width,
         use_space=use_space,
         token=token,
+        image_name=image_name,
         key=key,
     )
 

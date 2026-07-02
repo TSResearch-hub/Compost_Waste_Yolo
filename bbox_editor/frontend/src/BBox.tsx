@@ -17,13 +17,22 @@ export interface BBoxProps {
   isSelected: boolean,
   onClick: any,
   scale: number,
-  strokeWidth: number
+  strokeWidth: number,
+  fillOpacity: number,
 }
+
+const hexToRgba = (hex: string, alpha: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 const BBox = (props: BBoxProps) => {
   const shapeRef = React.useRef<any>();
   const trRef = React.useRef<any>();
   const {
-    rectProps, onChange, onDelete, isSelected, onClick, scale, strokeWidth
+    rectProps, onChange, onDelete, isSelected, onClick, scale, strokeWidth, fillOpacity
   }: BBoxProps = props
   const [moving, setMoving] = useState(false);
 
@@ -34,7 +43,6 @@ const BBox = (props: BBoxProps) => {
 
   return (
     <React.Fragment>
-      {moving || <Text text={rectProps.label} x={rectProps.x * scale + 5} y={rectProps.y * scale + 5} fontSize={15} fill={rectProps.stroke} />}
       <Rect
         onClick={onClick}
         onMouseDown={(e: any) => {
@@ -50,6 +58,7 @@ const BBox = (props: BBoxProps) => {
         y={rectProps.y * scale}
         width={rectProps.width * scale}
         height={rectProps.height * scale}
+        fill={fillOpacity > 0 ? hexToRgba(rectProps.stroke, fillOpacity) : undefined}
         draggable={isSelected}
         strokeWidth={strokeWidth}
         onDragStart={() => { setMoving(true) }}
@@ -78,6 +87,8 @@ const BBox = (props: BBoxProps) => {
           });
         }}
       />
+      {/* Texte rendu après le Rect pour rester lisible au-dessus du remplissage */}
+      {moving || <Text text={rectProps.label} x={rectProps.x * scale + 5} y={rectProps.y * scale + 5} fontSize={15} fill={rectProps.stroke} />}
       <Transformer
         ref={trRef}
         resizeEnabled={isSelected}
