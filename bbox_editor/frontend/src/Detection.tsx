@@ -22,6 +22,15 @@ export interface PythonArgs {
   use_space: boolean,
   token: number,
   image_name?: string,
+  start_time_ms?: number,
+}
+
+// Formate un nombre de secondes en "m:ss"
+const formatElapsed = (totalSeconds: number) => {
+  const s = Math.max(0, Math.round(totalSeconds))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}:${r.toString().padStart(2, '0')}`
 }
 
 // Largeur fixe du panneau de contrôle (boutons de classe + Valider) en px
@@ -40,6 +49,7 @@ const Detection = ({ args, theme }: ComponentProps) => {
     use_space,
     token,
     image_name = "",
+    start_time_ms = 0,
   }: PythonArgs = args
 
   const params = new URLSearchParams(window.location.search);
@@ -76,9 +86,20 @@ const Detection = ({ args, theme }: ComponentProps) => {
   const [brightness,   setBrightness]   = useState(0)
   const [contrast,     setContrast]     = useState(0)
   const [highlightMode, setHighlightMode] = useState(false)
+  const [elapsedSec, setElapsedSec] = useState(0)
 
   // Nom de fichier court (sans chemin)
   const displayName = image_name ? image_name.replace(/.*[/\\]/, '') : ''
+
+  // Chrono "live" : recalculé côté client depuis l'horodatage de départ envoyé
+  // par Python (fiable même si le composant est remonté, ex. après "Effacer tout").
+  useEffect(() => {
+    if (!start_time_ms) return
+    const tick = () => setElapsedSec((Date.now() - start_time_ms) / 1000)
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [start_time_ms])
 
   const handleClassSelect = useCallback((l: string) => {
     setLabel(l)
@@ -191,14 +212,19 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 </Box>
               )}
 
-              {/* Classe + compteur bbox */}
+              {/* Classe + chrono + compteur bbox */}
               <Flex align="center" justify="space-between" mb={3}>
                 <Text fontSize='sm' fontWeight='semibold' color='gray.600'>
                   Classe
                 </Text>
-                <Badge colorScheme='blue' fontSize='xs' px={2} borderRadius='full'>
-                  {rectangles.length} bbox{rectangles.length !== 1 ? 's' : ''}
-                </Badge>
+                <Flex align="center" gap={2}>
+                  <Badge colorScheme='orange' fontSize='xs' px={2} borderRadius='full' title="Temps passé sur cette image">
+                    ⏱ {formatElapsed(elapsedSec)}
+                  </Badge>
+                  <Badge colorScheme='blue' fontSize='xs' px={2} borderRadius='full'>
+                    {rectangles.length} bbox{rectangles.length !== 1 ? 's' : ''}
+                  </Badge>
+                </Flex>
               </Flex>
 
               {/* Boutons de classe + Valider côte à côte */}

@@ -43,6 +43,7 @@ def detection(
     key: str = None,
     token: int = 0,
     image_name: str = "",
+    start_time_ms: float = 0,
 ) -> list | None:
     """
     Affiche un éditeur de bounding boxes interactif.
@@ -58,6 +59,8 @@ def detection(
     color_map   : dict {label: '#hexcolor'} ; généré automatiquement si None
     use_space   : valider avec Espace en plus du bouton Complete
     key         : clé Streamlit unique
+    start_time_ms : horodatage epoch (ms) de début du chrono, pour affichage
+                    d'un timer "live" côté composant (voir annotation_timer.py)
 
     Retour
     ------
@@ -116,6 +119,7 @@ def detection(
         use_space=use_space,
         token=token,
         image_name=image_name,
+        start_time_ms=start_time_ms,
         key=key,
     )
 

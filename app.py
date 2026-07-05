@@ -4,6 +4,7 @@ import tempfile
 import streamlit as st
 import helper
 import settings
+import annotation_timer
 import cv2
 from PIL import Image
 from bbox_editor import detection as st_detection
@@ -321,6 +322,8 @@ def _save_annotation(pil_img, detection_result, w_img, h_img, original_name=None
     with open(lbl_dir / f"{stem}.txt", "w") as f:
         f.write("\n".join(yolo_lines))
 
+    return f"{stem}{ext}"
+
 
 def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
     """
@@ -381,10 +384,12 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
         bboxes, labels = helper.get_detection_initial_data(last_res)
         st.session_state[_data_key]    = {"bboxes": bboxes, "labels": labels}
         st.session_state[_counter_key] = 0
+        annotation_timer.start_timer(canvas_key)
 
     clear_counter = st.session_state.get(_counter_key, 0)
     annot_token   = st.session_state.get("_annot_token", 0)
     data = st.session_state[_data_key]
+    source = "offline" if offline_mode else "webcam"
 
     st.markdown("<div class='editor-container'>", unsafe_allow_html=True)
 
@@ -404,13 +409,15 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
         color_map=helper.CLASS_COLORS,
         token=annot_token,
         image_name=original_name or "",
+        start_time_ms=annotation_timer.get_start_time_ms(canvas_key),
         key=f"{canvas_key}_{annot_token}_{clear_counter}",
     )
 
     # ── Sauvegarde déclenchée par "Complete" dans le composant ────────────────
     if result is not None:
-        _save_annotation(pil_img, result, w_img, h_img, original_name=original_name, raw_bytes=raw_bytes)
-        st.toast("Annotation sauvegardée !", icon="✅")
+        saved_name = _save_annotation(pil_img, result, w_img, h_img, original_name=original_name, raw_bytes=raw_bytes)
+        log_row = annotation_timer.log_annotation(canvas_key, image_name=saved_name, source=source, nb_boxes=len(result))
+        st.toast(f"Annotation sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
         _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
 
     # ── Boutons complémentaires ───────────────────────────────────────────────
@@ -426,6 +433,7 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
     with col_cancel:
         if st.button("✖ Annuler", key=f"cancel_{canvas_key}", use_container_width=True):
             if exit_mode_annotation:
+                annotation_timer.log_annotation(canvas_key, image_name=original_name or "", source=source, nb_boxes=0, status="cancelled")
                 _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -655,6 +663,12 @@ with tab_verify:
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb).convert("RGB")
 
+            # Démarre le chrono uniquement quand une NOUVELLE paire image/label est importée
+            v_pair_id = f"{v_img.name}:{v_img.size}:{v_lbl.name}:{v_lbl.size}"
+            if st.session_state.get("_verify_pair_id") != v_pair_id:
+                st.session_state["_verify_pair_id"] = v_pair_id
+                annotation_timer.start_timer("verify")
+
             # Parsing du fichier YOLO (coordonnées normalisées → pixels)
             bboxes, labels_idx = [], []
             for line in v_lbl.getvalue().decode("utf-8").strip().split("\n"):
@@ -688,6 +702,7 @@ with tab_verify:
                 color_map=helper.CLASS_COLORS,
                 token=v_token,
                 image_name=v_img.name,
+                start_time_ms=annotation_timer.get_start_time_ms("verify"),
                 key=f"verify_{v_img.name}_{v_token}",
             )
 
@@ -696,6 +711,7 @@ with tab_verify:
                     pil_img, v_result, w_img, h_img,
                     original_name=v_img.name, raw_bytes=v_raw_bytes,
                 )
-                st.toast("Annotation corrigée et sauvegardée !", icon="✅")
+                log_row = annotation_timer.log_annotation("verify", image_name=v_img.name, source="verify", nb_boxes=len(v_result))
+                st.toast(f"Annotation corrigée et sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
                 st.session_state["_verify_token"] = v_token + 1
                 st.rerun()
