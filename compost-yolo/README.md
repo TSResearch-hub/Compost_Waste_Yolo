@@ -184,17 +184,15 @@ la session Colab suivante clone automatiquement la dernière version.
 Les sessions Colab peuvent sauter : `train.py --backup-dir` copie les
 checkpoints vers Drive toutes les N epochs. Pour reprendre après un crash
 (la VM est vidée : il faut d'abord ré-exécuter les cellules clone / install /
-dataset / montage Drive, puis restaurer le backup avant `--resume`) :
+dataset / montage Drive, puis relancer avec `--resume`) :
 
 ```python
 # retrouver le nom du run sauvegardé (ex. train_02-07_10h15)
 !ls /content/drive/MyDrive/compost/backups
 
-# restaurer le backup -> /content/runs, puis reprendre là où il s'était arrêté
-RUN = "train_02-07_10h15"   # <-- le nom affiché ci-dessus
-!mkdir -p /content/runs
-!cp -r /content/drive/MyDrive/compost/backups/{RUN} /content/runs/
-!python scripts/train.py --resume /content/runs/{RUN}/weights/last.pt \
+# reprendre directement depuis le backup Drive (adapter le nom du run)
+!python scripts/train.py \
+    --resume /content/drive/MyDrive/compost/backups/train_02-07_10h15/weights/last.pt \
     --backup-dir /content/drive/MyDrive/compost/backups --backup-every 10
 ```
 
