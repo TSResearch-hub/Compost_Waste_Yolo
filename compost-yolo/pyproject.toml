@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+app = ["streamlit>=1.50"]   # interface de fine-tuning : streamlit run finetune_app.py
 
 [tool.setuptools.packages.find]
 where = ["src"]

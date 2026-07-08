@@ -41,6 +41,9 @@ def main():
     parser.add_argument("--workers", type=int, default=2,
                         help="processus de chargement des données (défaut : 2 ; le défaut "
                              "Ultralytics de 8 sature la RAM limitée de WSL)")
+    parser.add_argument("--run-prefix", default="train",
+                        help="préfixe du dossier de run : 'pretrain' (datasets externes), "
+                             "'finetune' (captures réelles)... (défaut : train)")
     parser.add_argument("--resume", metavar="LAST_PT",
                         help="chemin du last.pt d'un run interrompu à reprendre")
     parser.add_argument("--backup-dir",
@@ -85,7 +88,7 @@ def main():
             device=device,
             # chemin absolu : sinon Ultralytics le préfixe par son runs_dir global
             project=str(Path(args.runs_dir).resolve()),
-            name=run_name("train"),
+            name=run_name(args.run_prefix),
             **extra,
         )
 

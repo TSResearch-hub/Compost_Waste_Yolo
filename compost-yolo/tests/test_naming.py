@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from compost_detection.naming import create_run_dir, run_name
+from compost_detection.naming import create_run_dir, run_name, weights_kind
 
 
 def test_run_name_is_readable():
@@ -23,3 +23,15 @@ def test_create_run_dir_suffixes_on_collision(tmp_path):
     assert first != second != third
     assert second.name == f"{first.name}-2"
     assert third.name == f"{first.name}-3"
+
+
+def test_weights_kind_from_run_dir():
+    assert weights_kind("runs/finetune_08-07_10h12/weights/best.pt") == "finetune"
+    assert weights_kind("runs/pretrain_29-06_17h13/weights/last.pt") == "pretrain"
+    assert weights_kind("runs/train_14-06_17h39/weights/best.pt") == "train"
+
+
+def test_weights_kind_from_file_stem():
+    assert weights_kind("models/pretrain_yolov8n.pt") == "pretrain"
+    assert weights_kind("models/pretrain-rtdetr-l.pt") == "pretrain"
+    assert weights_kind("yolov8n.pt") == "model"  # non reconnu -> générique

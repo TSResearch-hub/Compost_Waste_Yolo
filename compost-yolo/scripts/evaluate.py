@@ -28,7 +28,7 @@ import yaml
 from ultralytics import YOLO
 
 from compost_detection.alert import is_alert, load_alert_rules
-from compost_detection.naming import create_run_dir
+from compost_detection.naming import create_run_dir, weights_kind
 from compost_detection.metrics import (
     image_alert_confusion,
     mean_intruder_detections_on_negatives,
@@ -264,7 +264,8 @@ def main():
     args = parser.parse_args()
 
     device = args.device or ("0" if torch.cuda.is_available() else "cpu")
-    out_dir = create_run_dir(args.runs_dir, f"eval_{args.split}")
+    # nom d'éval dérivé du modèle évalué : eval_pretrain_..., eval_finetune_...
+    out_dir = create_run_dir(args.runs_dir, f"eval_{weights_kind(args.weights)}_{args.split}")
     model = YOLO(args.weights)
     data_cfg = yaml.safe_load(open(args.data, encoding="utf-8"))
     class_names = {int(k): v for k, v in data_cfg["names"].items()}
@@ -279,7 +280,8 @@ def main():
 
     # JSON consolidé : tout ce que les étapes 3 et 4 ont mesuré
     with open(out_dir / "image_level_metrics.json", "w", encoding="utf-8") as f:
-        json.dump({"split": args.split, "conf": args.conf, "iou": args.iou,
+        json.dump({"weights": str(Path(args.weights).resolve()),
+                   "split": args.split, "conf": args.conf, "iou": args.iou,
                    "per_class": stats,
                    "image_level": image_results["image_level"],
                    "per_class_image_level": image_results["per_class_image_level"],
