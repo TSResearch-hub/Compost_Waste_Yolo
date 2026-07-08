@@ -1,0 +1,32 @@
+# Import des captures réelles annotées (sessions sur plateau de compost).
+# Annotées via l'interface bricolée à 9 boutons. source_names = l'ordre EXACT
+# des boutons de l'interface au moment de l'annotation (= ids dans les labels).
+# Boîtes YOLO classiques (class cx cy w h) -> format yolo.
+#
+# Remappage vers le schéma projet à 7 classes (configs/data.yaml) :
+# - Organique et Papier (compostables) -> null (fond, ignoré) ;
+# - Verre/Composite : leurs ids interface (7, 8) sont réécrits vers les ids
+#   projet (5, 6) automatiquement via configs/data.yaml.
+format: yolo
+
+source_names:    # ordre = boutons de l'interface (ids 0..8 dans les labels)
+  - Plastique    # 0
+  - Metal        # 1  (bouton « Métal »)
+  - Carton       # 2
+  - Aluminium    # 3
+  - Ceramique    # 4  (bouton « Céramique »)
+  - Organique    # 5
+  - Papier       # 6
+  - Verre        # 7
+  - Composite    # 8
+
+class_map:
+  Plastique: Plastique
+  Metal: Metal
+  Carton: Carton
+  Aluminium: Aluminium
+  Ceramique: Ceramique
+  Organique: null    # compostable -> fond
+  Papier: null       # compostable -> ignoré
+  Verre: Verre
+  Composite: Composite

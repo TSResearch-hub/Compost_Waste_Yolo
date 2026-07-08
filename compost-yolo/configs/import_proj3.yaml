@@ -1,0 +1,204 @@
+# Correspondance pour « proj3 Food Waste Detection » (fork ali-ikched).
+# Assiettes de cantine avant/après repas — étude MDPI (Ferreira & Cerqueira,
+# YOLOv11). Licence : CC BY 4.0 (attribution). url :
+# https://universe.roboflow.com/project-eyfif/proj3-food-waste-detection
+#
+# Intérêt : domaine « restauration » (un client majeur du compost). Apporte
+# surtout des COUVERTS (Metal) et de la VAISSELLE (Ceramique) en conditions
+# réelles d'assiette. Les aliments sont IGNORÉS (null) : détecteur d'intrus
+# uniquement, l'organique est le fond (voir configs/data.yaml).
+#
+# Labels au format segmentation (polygones) -> convertis en boîtes à l'import.
+format: yolo-seg
+
+# Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
+# - fork / knife / spoon -> Metal : couverts de cantine généralement
+#   métalliques ; serait faux pour du jetable plastique (non distingué ici).
+# - plate / bowl / soupbowl -> Ceramique : vaisselle de cantine (tu as demandé
+#   plate -> Ceramique ; j'étends aux bols par cohérence). Pourrait être
+#   mélamine/plastique selon l'établissement -> à revoir si besoin.
+# - board / cup / coffee cup / water cup / water / garbage -> null : matériau
+#   ambigu (verre/papier/plastique) ou catégorie fourre-tout, on ignore.
+
+# Noms exacts du data.yaml de l'export (l'ordre = les ids 0..86)
+source_names:
+  - apple
+  - asparagus
+  - bacon
+  - baked potatoes
+  - banana
+  - beans
+  - black bean
+  - blueberries
+  - board
+  - boiled egg
+  - bones
+  - bowl
+  - bread
+  - breaded
+  - brocolis
+  - cabbage
+  - cabidela rice
+  - cake
+  - carrot
+  - cereals
+  - cheese
+  - chicken
+  - chicken steak
+  - chips
+  - chorizo
+  - coffee
+  - coffee cup
+  - cucumber
+  - cup
+  - cutlet
+  - fish
+  - fish hake
+  - fork
+  - french fries
+  - fried cod
+  - fried egg
+  - garbage
+  - gelatin
+  - grape
+  - greens
+  - grilled chop
+  - grilled steak
+  - ham
+  - knife
+  - lasagna
+  - lettuce
+  - lime
+  - mashed potatoes
+  - meatballs
+  - melon
+  - minced meat
+  - mushrooms
+  - mussel
+  - olives
+  - omelet
+  - onion
+  - orange
+  - pasta
+  - pineapple
+  - pizza
+  - plate
+  - pork
+  - pork belly
+  - pork intestines
+  - pork loin
+  - rice
+  - salmon
+  - scrambled eggs
+  - scrambled eggs with bacon
+  - soup
+  - soupbowl
+  - spaghetti
+  - spoon
+  - steak
+  - steaks with mushrooms
+  - stewed veal
+  - strawberry
+  - toasted bread
+  - tomato
+  - tuna
+  - tuna with mushrooms
+  - tuna with pasta
+  - turkey steak
+  - vegetables
+  - water
+  - water cup
+  - watermelon
+
+class_map:
+  # --- Metal (couverts) ---
+  fork: Metal
+  knife: Metal
+  spoon: Metal
+  # --- Ceramique (vaisselle) ---
+  plate: Ceramique
+  bowl: Ceramique
+  soupbowl: Ceramique
+  # --- Ignorés (matériau ambigu ou hors-sujet) ---
+  board: null
+  cup: null
+  coffee cup: null
+  water cup: null
+  water: null
+  garbage: null
+  # --- Aliments = fond, IGNORÉS (null) : on ne détecte que les intrus ---
+  apple: null
+  asparagus: null
+  bacon: null
+  baked potatoes: null
+  banana: null
+  beans: null
+  black bean: null
+  blueberries: null
+  boiled egg: null
+  bones: null
+  bread: null
+  breaded: null
+  brocolis: null
+  cabbage: null
+  cabidela rice: null
+  cake: null
+  carrot: null
+  cereals: null
+  cheese: null
+  chicken: null
+  chicken steak: null
+  chips: null
+  chorizo: null
+  coffee: null
+  cucumber: null
+  cutlet: null
+  fish: null
+  fish hake: null
+  french fries: null
+  fried cod: null
+  fried egg: null
+  gelatin: null
+  grape: null
+  greens: null
+  grilled chop: null
+  grilled steak: null
+  ham: null
+  lasagna: null
+  lettuce: null
+  lime: null
+  mashed potatoes: null
+  meatballs: null
+  melon: null
+  minced meat: null
+  mushrooms: null
+  mussel: null
+  olives: null
+  omelet: null
+  onion: null
+  orange: null
+  pasta: null
+  pineapple: null
+  pizza: null
+  pork: null
+  pork belly: null
+  pork intestines: null
+  pork loin: null
+  rice: null
+  salmon: null
+  scrambled eggs: null
+  scrambled eggs with bacon: null
+  soup: null
+  spaghetti: null
+  steak: null
+  steaks with mushrooms: null
+  stewed veal: null
+  strawberry: null
+  toasted bread: null
+  tomato: null
+  tuna: null
+  tuna with mushrooms: null
+  tuna with pasta: null
+  turkey steak: null
+  vegetables: null
+  watermelon: null
