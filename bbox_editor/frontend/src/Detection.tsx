@@ -3,7 +3,7 @@ import {
   withStreamlitConnection,
   ComponentProps
 } from "streamlit-component-lib"
-import React, { useCallback, useEffect, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import { ChakraProvider, SimpleGrid, Box, Flex, Center, Button, Text, Badge, Slider, SliderTrack, SliderFilledTrack, SliderThumb } from '@chakra-ui/react'
 
 import useImage from 'use-image';
@@ -37,6 +37,8 @@ const formatElapsed = (totalSeconds: number) => {
 const SIDE_PANEL_W = 230
 // gap entre canvas et panneau en px
 const GAP = 16
+// Profondeur maximale de l'historique undo/redo
+const HISTORY_MAX = 60
 
 const Detection = ({ args, theme }: ComponentProps) => {
   const {
@@ -88,6 +90,49 @@ const Detection = ({ args, theme }: ComponentProps) => {
   const [highlightMode, setHighlightMode] = useState(false)
   const [elapsedSec, setElapsedSec] = useState(0)
 
+  // ── Historique undo/redo ────────────────────────────────────────────────
+  // Snapshots stockés dans des refs (pas de re-render) ; historyVersion force
+  // le re-render des boutons ↩/↪ (état disabled).
+  const rectanglesRef = useRef(rectangles)
+  rectanglesRef.current = rectangles
+  const historyRef = useRef<any[][]>([])
+  const futureRef  = useRef<any[][]>([])
+  const [historyVersion, setHistoryVersion] = useState(0)
+
+  // Toute modification réelle des bboxes (ajout / déplacement / resize /
+  // suppression / changement de classe) passe par commitRectangles pour être
+  // enregistrée dans l'historique. La sélection (réordonnancement z-order)
+  // continue d'utiliser setRectangles directement.
+  const commitRectangles = useCallback((next: any[]) => {
+    historyRef.current.push(rectanglesRef.current)
+    if (historyRef.current.length > HISTORY_MAX) historyRef.current.shift()
+    futureRef.current = []
+    setRectangles(next)
+    setHistoryVersion(v => v + 1)
+  }, [])
+
+  const undo = useCallback(() => {
+    if (historyRef.current.length === 0) return
+    futureRef.current.push(rectanglesRef.current)
+    setRectangles(historyRef.current.pop()!)
+    setSelectedId(null)
+    setHistoryVersion(v => v + 1)
+  }, [])
+
+  const redo = useCallback(() => {
+    if (futureRef.current.length === 0) return
+    historyRef.current.push(rectanglesRef.current)
+    setRectangles(futureRef.current.pop()!)
+    setSelectedId(null)
+    setHistoryVersion(v => v + 1)
+  }, [])
+
+  const deleteSelected = useCallback(() => {
+    if (selectedId === null) return
+    commitRectangles(rectanglesRef.current.filter(r => r.id !== selectedId))
+    setSelectedId(null)
+  }, [selectedId, commitRectangles])
+
   // Nom de fichier court (sans chemin)
   const displayName = image_name ? image_name.replace(/.*[/\\]/, '') : ''
 
@@ -103,11 +148,12 @@ const Detection = ({ args, theme }: ComponentProps) => {
 
   const handleClassSelect = useCallback((l: string) => {
     setLabel(l)
-    setRectangles(prev => {
-      if (selectedId === null) return prev
-      return prev.map(r => r.id === selectedId ? { ...r, label: l, stroke: color_map[l] } : r)
-    })
-  }, [selectedId, color_map])
+    if (selectedId !== null) {
+      commitRectangles(rectanglesRef.current.map(r =>
+        r.id === selectedId ? { ...r, label: l, stroke: color_map[l] } : r
+      ))
+    }
+  }, [selectedId, color_map, commitRectangles])
 
   const [scale, setScale] = useState(1.0)
 
@@ -121,8 +167,8 @@ const Detection = ({ args, theme }: ComponentProps) => {
       // Downscale si l'image dépasse la largeur dispo ; jamais d'upscaling
       setScale(Math.min(scale_ratio, 1.0))
       const imageHeight = image_size[1] * Math.min(scale_ratio, 1.0)
-      // Sur mobile le panneau de contrôle est empilé en dessous (~160 px)
-      const extraHeight = isMobile ? 160 : 0
+      // Sur mobile le panneau de contrôle est empilé en dessous (~200 px)
+      const extraHeight = isMobile ? 200 : 0
       Streamlit.setFrameHeight(Math.max(imageHeight + extraHeight + 10, 200))
     }
 
@@ -134,13 +180,13 @@ const Detection = ({ args, theme }: ComponentProps) => {
   const sendValue = useCallback(() => {
     Streamlit.setComponentValue({
       token,
-      bboxes: rectangles.map((rect) => ({
+      bboxes: rectanglesRef.current.map((rect) => ({
         bbox: [rect.x, rect.y, rect.width, rect.height],
         label_id: label_list.indexOf(rect.label),
         label: rect.label
       }))
     })
-  }, [rectangles, token, label_list])
+  }, [token, label_list])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -151,6 +197,18 @@ const Detection = ({ args, theme }: ComponentProps) => {
       if (use_space && event.key === ' ') sendValue()
       if (event.key === 'Enter') sendValue()
       if (event.key === 'h' || event.key === 'H') setHighlightMode(prev => !prev)
+      if (event.key === 'Delete' || event.key === 'Backspace') deleteSelected()
+      if (event.key === 'Escape') setSelectedId(null)
+
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        undo()
+      }
+      if ((event.ctrlKey || event.metaKey) &&
+          (event.key.toLowerCase() === 'y' || (event.shiftKey && event.key.toLowerCase() === 'z'))) {
+        event.preventDefault()
+        redo()
+      }
 
       const num = parseInt(event.key)
       if (!isNaN(num) && num >= 1 && num <= label_list.length) {
@@ -159,7 +217,13 @@ const Detection = ({ args, theme }: ComponentProps) => {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => { window.removeEventListener('keydown', handleKeyDown) }
-  }, [sendValue, handleClassSelect, label_list, use_space])
+  }, [sendValue, handleClassSelect, deleteSelected, undo, redo, label_list, use_space])
+
+  // historyVersion (state) force un re-render après chaque commit/undo/redo,
+  // ce qui suffit à réévaluer ces deux flags stockés dans des refs.
+  void historyVersion
+  const canUndo = historyRef.current.length > 0
+  const canRedo = futureRef.current.length > 0
 
   return (
     <ChakraProvider>
@@ -179,6 +243,7 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 scale={scale}
                 setSelectedId={setSelectedId}
                 setRectangles={setRectangles}
+                commitRectangles={commitRectangles}
                 setLabel={setLabel}
                 color_map={color_map}
                 label={label}
@@ -275,6 +340,23 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 </Button>
               </Flex>
 
+              {/* Undo / Redo / Supprimer la sélection */}
+              <Flex gap={2} mt={3}>
+                <Button size='sm' flex='1' variant='outline' onClick={undo}
+                        isDisabled={!canUndo} title="Annuler la dernière action (Ctrl+Z)">
+                  ↩ Undo
+                </Button>
+                <Button size='sm' flex='1' variant='outline' onClick={redo}
+                        isDisabled={!canRedo} title="Rétablir (Ctrl+Y)">
+                  ↪ Redo
+                </Button>
+                <Button size='sm' flex='1' colorScheme='red' variant='outline'
+                        onClick={deleteSelected} isDisabled={selectedId === null}
+                        title="Supprimer la bbox sélectionnée (Suppr)">
+                  🗑 Suppr.
+                </Button>
+              </Flex>
+
               {/* Bouton highlight */}
               <Button
                 size='sm'
@@ -346,7 +428,10 @@ const Detection = ({ args, theme }: ComponentProps) => {
                 </Text>
                 <Text fontSize='xs' color='gray.500' lineHeight='1.6'>
                   <strong>1–{label_list.length}</strong> classe · <strong>Entrée</strong> valider · <strong>H</strong> highlight
+                  <br /><strong>Suppr</strong> efface la sélection · <strong>Échap</strong> désélectionne
+                  <br /><strong>Ctrl+Z</strong> annuler · <strong>Ctrl+Y</strong> rétablir
                   <br />Clic <strong>molette</strong> : supprimer bbox · Clic <strong>droit</strong> : déplacer la vue
+                  <br />Tactile : <strong>1 doigt</strong> dessiner · <strong>2 doigts</strong> zoom/déplacer
                 </Text>
               </Box>
             </Box>

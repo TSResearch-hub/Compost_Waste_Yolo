@@ -7,7 +7,8 @@ export interface BBoxCanvasLayerProps {
   rectangles: any[],
   selectedId: string | null,
   setSelectedId: any,
-  setRectangles: any,
+  setRectangles: any,        // setter brut : sélection / réordonnancement z-order (hors historique)
+  commitRectangles: any,     // setter avec historique : toute modification réelle des bboxes
   setLabel: any,
   color_map: any,
   scale: number,
@@ -24,6 +25,9 @@ export interface BBoxCanvasLayerProps {
 const ZOOM_FACTOR = 1.12
 const ZOOM_MIN    = 0.25
 const ZOOM_MAX    = 12
+// En dessous de ce déplacement (px écran), un clic/tap sur zone vide est ignoré
+// au lieu de créer une bbox minuscule accidentelle.
+const MIN_DRAW_PX = 4
 
 const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
   const {
@@ -31,6 +35,7 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     selectedId,
     setSelectedId,
     setRectangles,
+    commitRectangles,
     setLabel,
     color_map,
     scale,
@@ -60,6 +65,8 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const panStart = useRef<{ mx: number; my: number; sx: number; sy: number } | null>(null)
+  // État du geste 2 doigts (pinch-zoom + pan) : distance/centre/zoom/position initiaux
+  const pinchStart = useRef<{ dist: number; center: { x: number; y: number }; zoom: number; sx: number; sy: number } | null>(null)
 
   // Convertit des coordonnées viewport en coordonnées contenu du Stage
   const toStage = (stage: any, vx: number, vy: number) => ({
@@ -67,13 +74,36 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     y: (vy - stage.y()) / stage.scaleY(),
   })
 
+  // Positions des doigts relatives au conteneur du Stage
+  const touchPoints = (stage: any, touches: TouchList) => {
+    const rect = stage.container().getBoundingClientRect()
+    return Array.from(touches).map((t: any) => ({
+      x: t.clientX - rect.left,
+      y: t.clientY - rect.top,
+    }))
+  }
+
+  // Normalise une bbox : largeur/hauteur positives, bornée à l'image, taille min 5px
+  const clampRect = (r: any) => {
+    let { x, y, width, height } = r
+    if (width < 0)  { x += width;  width  = -width }
+    if (height < 0) { y += height; height = -height }
+    width  += Math.min(0, x); x = Math.max(0, x)
+    height += Math.min(0, y); y = Math.max(0, y)
+    width  = Math.max(5, Math.min(width,  image_size[0] - x))
+    height = Math.max(5, Math.min(height, image_size[1] - y))
+    x = Math.min(Math.max(0, x), Math.max(0, image_size[0] - width))
+    y = Math.min(Math.max(0, y), Math.max(0, image_size[1] - height))
+    return { ...r, x, y, width, height }
+  }
+
   // Réinitialise zoom + position quand une nouvelle image est chargée
   useEffect(() => {
     setZoom(1.0)
     setStagePos({ x: 0, y: 0 })
   }, [image_size])
 
-  // Clic gauche sur zone vide : démarrer dessin ou désélectionner
+  // Clic/tap sur zone vide : démarrer dessin ou désélectionner
   const checkDeselect = (e: any) => {
     if (!(e.target instanceof Konva.Rect)) {
       if (selectedId === null) {
@@ -85,38 +115,37 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
     }
   }
 
-  // Clamping des bboxes hors limites
-  useEffect(() => {
-    const rects = rectangles.slice()
-    for (let i = 0; i < rects.length; i++) {
-      if (rects[i].width < 0) {
-        rects[i].width = rects[i].width * -1
-        rects[i].x = rects[i].x - rects[i].width
-        setRectangles(rects)
-      }
-      if (rects[i].height < 0) {
-        rects[i].height = rects[i].height * -1
-        rects[i].y = rects[i].y - rects[i].height
-        setRectangles(rects)
-      }
-      if (rects[i].x < 0 || rects[i].y < 0) {
-        rects[i].width = rects[i].width + Math.min(0, rects[i].x)
-        rects[i].x = Math.max(0, rects[i].x)
-        rects[i].height = rects[i].height + Math.min(0, rects[i].y)
-        rects[i].y = Math.max(0, rects[i].y)
-        setRectangles(rects)
-      }
-      if (rects[i].x + rects[i].width > image_size[0] || rects[i].y + rects[i].height > image_size[1]) {
-        rects[i].width = Math.min(rects[i].width, image_size[0] - rects[i].x)
-        rects[i].height = Math.min(rects[i].height, image_size[1] - rects[i].y)
-        setRectangles(rects)
-      }
-      if (rects[i].width < 5 || rects[i].height < 5) {
-        rects[i].width = 5
-        rects[i].height = 5
-      }
+  // Fin de dessin (souris ou tactile) : crée la bbox si le geste est assez grand
+  const finishAdding = () => {
+    if (adding === null) return
+    const dw = Math.abs(adding[2] - adding[0])
+    const dh = Math.abs(adding[3] - adding[1])
+    // Geste trop petit (simple clic/tap) → pas de bbox fantôme
+    if (dw * zoom < MIN_DRAW_PX && dh * zoom < MIN_DRAW_PX) {
+      setAdding(null)
+      return
     }
-  }, [rectangles, image_size])
+    const newRect = clampRect({
+      x:      adding[0] / scale,
+      y:      adding[1] / scale,
+      width:  (adding[2] - adding[0]) / scale,
+      height: (adding[3] - adding[1]) / scale,
+      label,
+      stroke: color_map[label],
+      id:     Date.now().toString()
+    })
+    commitRectangles([...rectangles, newRect])
+    setAdding(null)
+  }
+
+  const applyZoomAt = (pointer: { x: number; y: number }, oldZoom: number, newZoom: number, sx: number, sy: number) => {
+    const origin = { x: (pointer.x - sx) / oldZoom, y: (pointer.y - sy) / oldZoom }
+    setZoom(newZoom)
+    setStagePos({
+      x: pointer.x - origin.x * newZoom,
+      y: pointer.y - origin.y * newZoom,
+    })
+  }
 
   const W = image_size[0] * scale
   const H = image_size[1] * scale
@@ -129,7 +158,9 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
       y={stagePos.y}
       scaleX={zoom}
       scaleY={zoom}
-      style={{ cursor: isPanning ? 'grabbing' : 'crosshair' }}
+      // touchAction none : le navigateur ne scrolle/zoome jamais la page
+      // pendant qu'on manipule le canvas au doigt
+      style={{ cursor: isPanning ? 'grabbing' : 'crosshair', touchAction: 'none' }}
 
       // ── Zoom molette, centré sur le curseur ──────────────────────────────
       onWheel={(e: any) => {
@@ -137,20 +168,18 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
         const stage    = e.target.getStage()
         const oldZoom  = stage.scaleX()
         const pointer  = stage.getPointerPosition()
-        const origin   = { x: (pointer.x - stage.x()) / oldZoom,
-                           y: (pointer.y - stage.y()) / oldZoom }
         const newZoom  = e.evt.deltaY < 0
           ? Math.min(oldZoom * ZOOM_FACTOR, ZOOM_MAX)
           : Math.max(oldZoom / ZOOM_FACTOR, ZOOM_MIN)
-        setZoom(newZoom)
-        setStagePos({
-          x: pointer.x - origin.x * newZoom,
-          y: pointer.y - origin.y * newZoom,
-        })
+        applyZoomAt(pointer, oldZoom, newZoom, stage.x(), stage.y())
       }}
 
-      // ── Double-clic : reset zoom ─────────────────────────────────────────
+      // ── Double-clic / double-tap : reset zoom ────────────────────────────
       onDblClick={() => {
+        setZoom(1.0)
+        setStagePos({ x: 0, y: 0 })
+      }}
+      onDblTap={() => {
         setZoom(1.0)
         setStagePos({ x: 0, y: 0 })
       }}
@@ -205,20 +234,67 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
           setIsPanning(false)
           return
         }
-        if (adding !== null) {
-          const rects  = rectangles.slice()
-          rects.push({
-            x:      adding[0] / scale,
-            y:      adding[1] / scale,
-            width:  (adding[2] - adding[0]) / scale,
-            height: (adding[3] - adding[1]) / scale,
-            label,
-            stroke: color_map[label],
-            id:     Date.now().toString()
-          })
-          setRectangles(rects)
+        finishAdding()
+      }}
+
+      // ── TACTILE : 1 doigt = dessin/sélection · 2 doigts = zoom + pan ─────
+      onTouchStart={(e: any) => {
+        e.evt.preventDefault()
+        const stage   = e.target.getStage()
+        const touches = e.evt.touches
+
+        if (touches.length === 2) {
+          // Un 2e doigt posé annule le dessin en cours et démarre le pinch
           setAdding(null)
+          const [p1, p2] = touchPoints(stage, touches)
+          pinchStart.current = {
+            dist:   Math.hypot(p2.x - p1.x, p2.y - p1.y),
+            center: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 },
+            zoom:   stage.scaleX(),
+            sx:     stage.x(),
+            sy:     stage.y(),
+          }
+          return
         }
+        if (touches.length === 1 && pinchStart.current === null) {
+          checkDeselect(e)
+        }
+      }}
+
+      onTouchMove={(e: any) => {
+        e.evt.preventDefault()
+        const stage   = e.target.getStage()
+        const touches = e.evt.touches
+
+        if (touches.length === 2 && pinchStart.current) {
+          const [p1, p2] = touchPoints(stage, touches)
+          const start   = pinchStart.current
+          const dist    = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+          const center  = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
+          const newZoom = Math.min(Math.max(start.zoom * dist / start.dist, ZOOM_MIN), ZOOM_MAX)
+          // Zoom autour du centre initial du geste + pan si le centre se déplace
+          const origin  = { x: (start.center.x - start.sx) / start.zoom,
+                            y: (start.center.y - start.sy) / start.zoom }
+          setZoom(newZoom)
+          setStagePos({
+            x: center.x - origin.x * newZoom,
+            y: center.y - origin.y * newZoom,
+          })
+          return
+        }
+
+        if (adding !== null && touches.length === 1) {
+          const pointer = stage.getPointerPosition()
+          if (pointer) {
+            const sc = toStage(stage, pointer.x, pointer.y)
+            setAdding([adding[0], adding[1], sc.x, sc.y])
+          }
+        }
+      }}
+
+      onTouchEnd={(e: any) => {
+        if (e.evt.touches.length < 2) pinchStart.current = null
+        if (e.evt.touches.length === 0) finishAdding()
       }}
     >
       {/* Couche image */}
@@ -256,13 +332,13 @@ const BBoxCanvas = (props: BBoxCanvasLayerProps) => {
               setLabel(rect.label)
             }}
             onDelete={() => {
-              setRectangles(rectangles.filter((r) => r.id !== rect.id))
+              commitRectangles(rectangles.filter((r) => r.id !== rect.id))
               setSelectedId(null)
             }}
             onChange={(newAttrs: any) => {
               const rects = rectangles.slice()
-              rects[i]    = newAttrs
-              setRectangles(rects)
+              rects[i]    = clampRect(newAttrs)
+              commitRectangles(rects)
             }}
           />
         ))}

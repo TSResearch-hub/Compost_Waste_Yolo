@@ -45,6 +45,7 @@ const BBox = (props: BBoxProps) => {
     <React.Fragment>
       <Rect
         onClick={onClick}
+        onTap={onClick}
         onMouseDown={(e: any) => {
           if (e.evt.button === 1) {
             e.evt.preventDefault()
@@ -94,6 +95,8 @@ const BBox = (props: BBoxProps) => {
         resizeEnabled={isSelected}
         rotateEnabled={false}
         keepRatio={false}
+        anchorSize={12}
+        anchorCornerRadius={3}
         borderStroke={rectProps.stroke}
         borderStrokeWidth={strokeWidth}
         boundBoxFunc={(oldBox, newBox) => {
