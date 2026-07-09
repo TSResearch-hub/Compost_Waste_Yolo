@@ -13,3 +13,16 @@ video/
 
 # Données annotées (décommenter si tu ne veux pas les versionner)
 # dataset_recolte/
+
+# Archives lourdes du dataset (1 Go+) — ne jamais les committer
+dataset_recolte.zip
+*.zip
+
+# Fichiers parasites Windows/WSL (métadonnées de téléchargement)
+*Zone.Identifier
+
+# Configuration locale Claude Code
+.claude/
+
+# Cache des miniatures du serveur mobile
+mobile/.thumb_cache/
