@@ -1,0 +1,333 @@
+/* ══════════════════════════════════════════════════════════════════
+   Composte IA — annotation mobile
+   Thème sombre industriel, pensé tactile : cibles ≥ 48px, safe-areas iOS
+   ══════════════════════════════════════════════════════════════════ */
+:root {
+  --bg:       #0f1115;
+  --surface:  #191d26;
+  --surface2: #232936;
+  --border:   #303849;
+  --text:     #e8eaf0;
+  --muted:    #8b93a7;
+  --green:    #16b939;
+  --green-dk: #0a6620;
+  --red:      #e04545;
+  --radius:   14px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+
+button { font-family: inherit; }
+
+/* ── Vues ─────────────────────────────────────────────────────────── */
+.view { display: none; }
+.view.active { display: flex; flex-direction: column; }
+
+/* ══════════ ACCUEIL ══════════ */
+#view-home.active {
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 20px);
+  gap: 20px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.home-header { display: flex; align-items: center; gap: 14px; }
+.home-logo   { width: 54px; height: 54px; border-radius: 14px; }
+.home-header h1 { font-size: 1.55rem; letter-spacing: 0.02em; }
+.subtitle    { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.stat-value { font-size: 1.25rem; font-weight: 800; color: var(--green); }
+.stat-label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.home-actions { display: flex; flex-direction: column; gap: 12px; }
+.action-btn {
+  display: flex; align-items: center; gap: 16px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 18px;
+  min-height: 76px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.06s, background 0.15s;
+}
+.action-btn:active { transform: scale(0.985); background: var(--surface2); }
+.action-btn.primary {
+  background: linear-gradient(135deg, var(--green-dk), #0e8a2c);
+  border-color: #1fbf45;
+}
+.action-btn small { color: var(--muted); font-size: 0.78rem; }
+.action-btn.primary small { color: #c9f2d3; }
+.action-icon { font-size: 1.9rem; flex-shrink: 0; }
+
+.options {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+.options summary { cursor: pointer; font-size: 0.9rem; color: var(--muted); }
+.opt-row { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; font-size: 0.88rem; }
+.opt-row input[type=range] { width: 100%; accent-color: var(--green); height: 32px; }
+
+.offline-note { color: var(--muted); font-size: 0.75rem; text-align: center; }
+
+/* ══════════ BARRE SUPÉRIEURE (galerie + éditeur) ══════════ */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.topbar h2 { font-size: 1.05rem; flex: 1; }
+.icon-btn {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 1.3rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn:active { background: var(--border); }
+
+/* ══════════ GALERIE ══════════ */
+#view-gallery.active { height: 100dvh; }
+.filter-chips { display: flex; gap: 6px; }
+.chip {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  min-height: 40px;
+  cursor: pointer;
+}
+.chip.active { background: var(--green-dk); border-color: var(--green); color: #fff; }
+
+.gallery-grid {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  /* plancher : les rangées ne s'effondrent jamais, même avant chargement des images */
+  grid-auto-rows: minmax(110px, auto);
+  gap: 8px;
+  padding: 10px 10px calc(env(safe-area-inset-bottom) + 10px);
+}
+.thumb {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  cursor: pointer;
+  padding: 0;
+  display: block;
+}
+/* les enfants ne captent pas les clics : le tap atterrit toujours sur le bouton
+   (et empêche le drag natif de l'image sur Android) */
+.thumb > * { pointer-events: none; }
+/* l'image porte l'aspect-ratio (et non le bouton) : elle a une largeur définie,
+   donc une hauteur définie, qui dimensionne correctement la rangée du grid.
+   (aspect-ratio sur le bouton + height:100% sur l'img = circularité → rangées
+   écrasées et vignettes superposées) */
+.thumb img { width: 100%; aspect-ratio: 1; height: auto; object-fit: cover; display: block; }
+.thumb .thumb-badge {
+  position: absolute; top: 4px; right: 4px;
+  font-size: 0.8rem;
+  background: rgba(10, 12, 16, 0.75);
+  border-radius: 6px;
+  padding: 2px 5px;
+}
+.thumb .thumb-name {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  font-size: 0.58rem;
+  color: #cfd4e0;
+  background: rgba(10, 12, 16, 0.75);
+  padding: 3px 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: left;
+}
+.gallery-empty { grid-column: 1 / -1; color: var(--muted); text-align: center; padding: 40px 20px; }
+
+/* ══════════ ÉDITEUR ══════════ */
+#view-editor.active { height: 100dvh; }
+
+.editor-topbar { gap: 8px; }
+.editor-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.editor-name { font-size: 0.8rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.editor-progress { font-size: 0.68rem; color: var(--muted); }
+.badge {
+  font-size: 0.72rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge.timer { color: #ffb347; border-color: #6b4a12; }
+
+.canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #05070a;
+  /* Le navigateur ne doit jamais scroller/zoomer la page depuis le canvas */
+  touch-action: none;
+}
+#canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+.canvas-hint {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  font-size: 0.68rem; color: #aab2c5;
+  background: rgba(15, 17, 21, 0.82);
+  padding: 6px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+  transition: opacity 0.5s;
+  white-space: nowrap;
+  max-width: 94%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.canvas-hint.hidden { opacity: 0; }
+
+/* impératif : display:flex écraserait sinon le style UA de l'attribut hidden,
+   laissant l'overlay invisible bloquer tous les événements tactiles du canvas */
+.spinner-overlay[hidden] { display: none; }
+.spinner-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(5, 7, 10, 0.55);
+  color: var(--text);
+  font-size: 0.9rem;
+  z-index: 5;
+}
+.spinner {
+  width: 42px; height: 42px;
+  border: 4px solid var(--border);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Panneau bas : classes + actions ─────────────────────────────── */
+.editor-panel {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px);
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.class-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 2px;
+}
+.class-chips::-webkit-scrollbar { display: none; }
+.class-chip {
+  flex-shrink: 0;
+  min-height: 46px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  border: 2px solid var(--cc, #888);
+  background: transparent;
+  color: var(--cc, #888);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+}
+.class-chip .num { font-size: 0.68rem; opacity: 0.7; }
+.class-chip.active { background: var(--cc); color: #fff; }
+
+.editor-actions { display: flex; gap: 8px; }
+.tool-btn {
+  width: 52px; min-height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 1.25rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tool-btn:disabled { opacity: 0.35; }
+.tool-btn:not(:disabled):active { background: var(--border); }
+.tool-btn.danger { color: var(--red); border-color: #5c2727; }
+.tool-btn.on { background: var(--green-dk); border-color: var(--green); }
+
+.validate-btn {
+  flex: 1;
+  min-height: 52px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--green-dk), var(--green));
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(22, 185, 57, 0.25);
+}
+.validate-btn:active { transform: scale(0.985); }
+.validate-btn:disabled { opacity: 0.55; }
+
+/* ══════════ TOAST ══════════ */
+.toast {
+  position: fixed;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 96px);
+  background: #e8eaf0;
+  color: #14161c;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 12px 18px;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  max-width: 88vw;
+  text-align: center;
+}
+.toast.error { background: #ffd9d9; color: #7a1010; }
+
+/* ══════════ Écrans larges (tablette paysage) ══════════ */
+@media (min-width: 900px) {
+  .editor-panel { flex-direction: row; align-items: center; }
+  .class-chips { flex: 1; }
+  .editor-actions { flex-shrink: 0; width: auto; }
+  .validate-btn { min-width: 180px; flex: 0 0 auto; }
+}

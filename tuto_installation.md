@@ -94,3 +94,15 @@ streamlit run app.py
 ```
 
 L'application va se lancer et une page web devrait s'ouvrir automatiquement dans votre navigateur par défaut. Si ce n'est pas le cas, vous pouvez y accéder manuellement en allant à l'adresse suivante : http://localhost:8501
+
+## 5. (Optionnel) Version mobile — annoter depuis un téléphone / une tablette
+
+Une seconde interface, tactile, permet d'annoter depuis un smartphone connecté
+au même réseau WiFi que le PC (le modèle YOLO reste sur le PC) :
+
+```bash
+python mobile/server.py
+```
+
+Le terminal affiche l'adresse à ouvrir sur le téléphone
+(ex. `http://192.168.1.20:8000`). Voir `mobile/README.md` pour les détails.

@@ -6,3 +6,8 @@ numpy
 matplotlib
 packaging
 pathlib
+
+# Serveur de la version mobile (mobile/server.py)
+fastapi
+uvicorn[standard]
+python-multipart

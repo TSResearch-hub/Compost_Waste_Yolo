@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Composte IA — Annotation mobile</title>
+  <meta name="theme-color" content="#0f1115">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- ══════════ ÉCRAN D'ACCUEIL ══════════ -->
+  <section id="view-home" class="view active">
+    <header class="home-header">
+      <img src="/static/icons/icon-192.png" alt="" class="home-logo">
+      <div>
+        <h1>Composte&nbsp;IA</h1>
+        <p class="subtitle">Annotation mobile · Station de compostage</p>
+      </div>
+    </header>
+
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card"><span class="stat-value" id="stat-images">–</span><span class="stat-label">images</span></div>
+      <div class="stat-card"><span class="stat-value" id="stat-annotated">–</span><span class="stat-label">annotées</span></div>
+      <div class="stat-card"><span class="stat-value" id="stat-today">–</span><span class="stat-label">aujourd'hui</span></div>
+      <div class="stat-card"><span class="stat-value" id="stat-mean">–</span><span class="stat-label">moy./image</span></div>
+    </div>
+
+    <div class="home-actions">
+      <button class="action-btn primary" id="btn-camera">
+        <span class="action-icon">📷</span>
+        <span><strong>Prendre une photo</strong><br><small>Caméra du téléphone → pré-annotation IA</small></span>
+      </button>
+      <button class="action-btn" id="btn-import">
+        <span class="action-icon">🖼</span>
+        <span><strong>Importer des images</strong><br><small>Depuis la galerie, annotation en série</small></span>
+      </button>
+      <button class="action-btn" id="btn-verify">
+        <span class="action-icon">🔍</span>
+        <span><strong>Vérifier le dataset</strong><br><small>Relire et corriger les annotations</small></span>
+      </button>
+    </div>
+
+    <details class="options">
+      <summary>⚙️ Options</summary>
+      <label class="opt-row">
+        <span>Seuil de confiance IA&nbsp;: <b id="conf-value">0.40</b></span>
+        <input type="range" id="conf-slider" min="0.1" max="0.95" step="0.05" value="0.4">
+      </label>
+    </details>
+
+    <p class="offline-note" id="server-status"></p>
+
+    <!-- inputs cachés : capture caméra & import galerie -->
+    <input type="file" id="input-camera" accept="image/*" capture="environment" hidden>
+    <input type="file" id="input-import" accept="image/*" multiple hidden>
+  </section>
+
+  <!-- ══════════ GALERIE / VÉRIFICATION ══════════ -->
+  <section id="view-gallery" class="view">
+    <header class="topbar">
+      <button class="icon-btn" id="gallery-back">←</button>
+      <h2>Vérification</h2>
+      <div class="filter-chips">
+        <button class="chip active" data-filter="all">Toutes</button>
+        <button class="chip" data-filter="annotated">✅</button>
+        <button class="chip" data-filter="unannotated">⬜</button>
+      </div>
+    </header>
+    <div class="gallery-grid" id="gallery-grid"></div>
+  </section>
+
+  <!-- ══════════ ÉDITEUR ══════════ -->
+  <section id="view-editor" class="view">
+    <header class="topbar editor-topbar">
+      <button class="icon-btn" id="editor-back">←</button>
+      <div class="editor-info">
+        <span class="editor-name" id="editor-name">image.jpg</span>
+        <span class="editor-progress" id="editor-progress"></span>
+      </div>
+      <span class="badge timer" id="editor-timer">⏱ 0:00</span>
+      <span class="badge" id="editor-count">0 bbox</span>
+    </header>
+
+    <div class="canvas-wrap" id="canvas-wrap">
+      <canvas id="canvas"></canvas>
+      <div class="spinner-overlay" id="spinner" hidden>
+        <div class="spinner"></div>
+        <span id="spinner-text">Analyse IA…</span>
+      </div>
+      <div class="canvas-hint" id="canvas-hint">1 doigt : dessiner / déplacer · 2 doigts : zoom · double-tap : recadrer</div>
+    </div>
+
+    <footer class="editor-panel">
+      <div class="class-chips" id="class-chips"></div>
+      <div class="editor-actions">
+        <button class="tool-btn" id="btn-undo" title="Annuler" disabled>↩</button>
+        <button class="tool-btn" id="btn-redo" title="Rétablir" disabled>↪</button>
+        <button class="tool-btn danger" id="btn-delete" title="Supprimer la bbox" disabled>🗑</button>
+        <button class="tool-btn" id="btn-highlight" title="Surligner">🔆</button>
+        <button class="tool-btn" id="btn-predict" title="Pré-annotation IA">🤖</button>
+        <button class="validate-btn" id="btn-validate">✓ Valider</button>
+      </div>
+    </footer>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
