@@ -64,6 +64,32 @@ def _format_duration(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def get_stats() -> dict | None:
+    """
+    Statistiques agrégées du CSV pour affichage dans la sidebar :
+    nombre total d'annotations complétées, nombre aujourd'hui, durée moyenne
+    du jour. Retourne None si aucun historique n'existe encore.
+    """
+    if not CSV_PATH.exists():
+        return None
+    today = datetime.now().strftime("%Y-%m-%d")
+    total, n_today = 0, 0
+    durations_today = []
+    with open(CSV_PATH, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if row.get("status") != "completed":
+                continue
+            total += 1
+            if row.get("end_time", "").startswith(today):
+                n_today += 1
+                try:
+                    durations_today.append(float(row["duration_sec"]))
+                except (TypeError, ValueError):
+                    pass
+    mean_today = sum(durations_today) / len(durations_today) if durations_today else None
+    return {"total": total, "today": n_today, "mean_sec_today": mean_today}
+
+
 def log_annotation(state_key: str, image_name: str, source: str, nb_boxes: int = 0, status: str = "completed") -> dict:
     """
     Calcule la durée écoulée depuis le dernier start_timer(state_key) et

@@ -52,35 +52,17 @@ div[data-testid="stButton"] > button[kind="primary"] {
     letter-spacing: 0.04em;
 }
 
-/* ══ BOUTONS DE CLASSE — massifs pour sélection rapide sans erreur ════════
-   height: 60px garanti via min-height.
-   Ciblés via aria-label que Streamlit expose sur chaque bouton.           */
-button[aria-label="Plastique"],
-button[aria-label="Métal"],
-button[aria-label="Carton"],
-button[aria-label="Aluminium"],
-button[aria-label="Céramique"],
-button[aria-label="Organique"],
-button[aria-label="Papier"],
-button[aria-label="Verre"],
-button[aria-label="Composite"] {
-    min-height: 60px !important;
-    font-size: 1.15rem !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.02em;
-}
-
-/* ══ BOUTONS DESTRUCTIFS — Effacer (tout) + Supprimer (objet ciblé) ══════ */
-button[aria-label="🗑 Effacer"],
-button[aria-label="🗑 Supprimer"] {
+/* ══ BOUTONS DESTRUCTIFS — Effacer tout + Vider la file ══════════════════ */
+button[aria-label="🗑 Effacer tout"],
+button[aria-label="🗑 Vider"] {
     min-height: 2.2rem !important;
     font-size: 0.82rem !important;
     opacity: 0.75;
     border: 1.5px solid #c23232 !important;
     color: #c23232 !important;
 }
-button[aria-label="🗑 Effacer"]:hover,
-button[aria-label="🗑 Supprimer"]:hover {
+button[aria-label="🗑 Effacer tout"]:hover,
+button[aria-label="🗑 Vider"]:hover {
     background-color: #c23232 !important;
     color: #fff !important;
     opacity: 1 !important;
@@ -242,7 +224,14 @@ except Exception as ex:
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — réglages profonds uniquement
+# CONSTANTES
+# ══════════════════════════════════════════════════════════════════════════════
+SAVE_DIR = Path("dataset_recolte")
+LABEL_LIST = list(helper.CLASS_MAP.keys())
+IMG_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR — réglages profonds + stats du dataset
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.title("⚙️ Paramètres")
@@ -260,13 +249,25 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.caption("Composte IA · Station de compostage")
+    st.subheader("📊 Dataset")
+    _n_labels = len(list((SAVE_DIR / "labels").glob("*.txt"))) if (SAVE_DIR / "labels").exists() else 0
+    _n_images = (
+        len([p for p in (SAVE_DIR / "images").iterdir() if p.suffix.lower() in IMG_EXTENSIONS])
+        if (SAVE_DIR / "images").exists() else 0
+    )
+    _c1, _c2 = st.columns(2)
+    _c1.metric("Images", _n_images)
+    _c2.metric("Annotées", _n_labels)
+    _stats = annotation_timer.get_stats()
+    if _stats:
+        _line = f"Aujourd'hui : **{_stats['today']}** annotation(s)"
+        if _stats["mean_sec_today"] is not None:
+            _line += f" · ⏱ moy. **{_stats['mean_sec_today']:.0f} s**/image"
+        st.caption(_line)
+        st.caption(f"Total historique : {_stats['total']} annotations")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CONSTANTES
-# ══════════════════════════════════════════════════════════════════════════════
-SAVE_DIR = Path("dataset_recolte")
-LABEL_LIST = list(helper.CLASS_MAP.keys())  # ['Dgrx', 'Mrisq', 'NonCompost', 'Compost']
+    st.divider()
+    st.caption("Composte IA · Station de compostage")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITAIRES CANVAS & SAUVEGARDE
@@ -286,12 +287,32 @@ def _reset_canvas_state(canvas_key):
         st.session_state.pop(f"{canvas_key}{suffix}", None)
 
 
-def _save_annotation(pil_img, detection_result, w_img, h_img, original_name=None, raw_bytes=None):
+def _resolve_name_collision(img_dir, stem, ext, raw_bytes):
+    """
+    Évite d'écraser silencieusement une image déjà présente dans le dataset.
+    - Fichier absent                          → stem inchangé.
+    - Fichier présent avec le même contenu    → stem inchangé (ré-annotation
+      volontaire de la même image : le label sera simplement mis à jour).
+    - Fichier présent avec un contenu différent (collision de nom entre deux
+      lots d'import) → suffixe incrémental stem_2, stem_3, ...
+    """
+    candidate = stem
+    i = 1
+    while (img_dir / f"{candidate}{ext}").exists():
+        if raw_bytes is not None and (img_dir / f"{candidate}{ext}").read_bytes() == raw_bytes:
+            return candidate
+        i += 1
+        candidate = f"{stem}_{i}"
+    return candidate
+
+
+def _save_annotation(pil_img, detection_result, w_img, h_img, original_name=None, raw_bytes=None, overwrite=False):
     """
     Sauvegarde l'image et le fichier YOLO depuis le résultat du composant detection().
     detection_result : liste de {'bbox': [x, y, w, h], 'label_id': int, 'label': str}
     Les coordonnées bbox sont en pixels dans l'espace image original.
     Si raw_bytes est fourni, les bytes originaux sont écrits tels quels (sans réencodage).
+    overwrite=True (onglet Vérification) : on réécrit volontairement l'annotation existante.
     """
     img_dir, lbl_dir = _prepare_save_dirs()
 
@@ -301,6 +322,9 @@ def _save_annotation(pil_img, detection_result, w_img, h_img, original_name=None
     else:
         stem = f"cap_{int(time.time())}"
         ext  = ".jpg"
+
+    if not overwrite:
+        stem = _resolve_name_collision(img_dir, stem, ext, raw_bytes)
 
     if raw_bytes is not None:
         with open(img_dir / f"{stem}{ext}", "wb") as fout:
@@ -323,6 +347,24 @@ def _save_annotation(pil_img, detection_result, w_img, h_img, original_name=None
         f.write("\n".join(yolo_lines))
 
     return f"{stem}{ext}"
+
+
+def _parse_yolo_label(text, w_img, h_img):
+    """Parse un fichier YOLO (classe xc yc w h normalisés) → bboxes pixels + indices."""
+    bboxes, labels_idx = [], []
+    for line in text.strip().split("\n"):
+        parts = line.strip().split()
+        if len(parts) == 5:
+            try:
+                cid = int(parts[0])
+                xc, yc, bw, bh = (float(p) for p in parts[1:])
+                bboxes.append(
+                    [(xc - bw / 2) * w_img, (yc - bh / 2) * h_img, bw * w_img, bh * h_img]
+                )
+                labels_idx.append(min(cid, len(LABEL_LIST) - 1))
+            except ValueError:
+                pass
+    return bboxes, labels_idx
 
 
 def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
@@ -644,74 +686,201 @@ with tab_video:
 
 # ─── ONGLET 4 : VÉRIFICATION D'ANNOTATION ────────────────────────────────────
 with tab_verify:
-    st.write("Importez une image et son fichier d'annotation YOLO pour vérifier ou corriger les bboxes.")
+    v_source = st.radio(
+        "Source",
+        ["📁 Dataset enregistré", "⬆ Import manuel"],
+        horizontal=True,
+        key="verify_source",
+        label_visibility="collapsed",
+    )
 
-    col_v1, col_v2 = st.columns(2)
-    with col_v1:
-        v_img = st.file_uploader("Image", type=["jpg", "jpeg", "png"], key="v_img")
-    with col_v2:
-        v_lbl = st.file_uploader("Annotation YOLO (.txt)", type=["txt"], key="v_lbl")
+    # ── Mode 1 : parcours direct de dataset_recolte/ (plus d'upload manuel) ──
+    if v_source == "📁 Dataset enregistré":
+        img_dir = SAVE_DIR / "images"
+        lbl_dir = SAVE_DIR / "labels"
+        all_imgs = (
+            sorted(p for p in img_dir.iterdir() if p.suffix.lower() in IMG_EXTENSIONS)
+            if img_dir.exists() else []
+        )
 
-    if v_img is not None and v_lbl is not None:
-        v_raw_bytes = v_img.getvalue()
-        nparr = np.frombuffer(v_raw_bytes, np.uint8)
-        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img_bgr is None:
-            st.error("Impossible de décoder l'image.")
+        if not all_imgs:
+            st.info("Aucune image dans `dataset_recolte/images` pour le moment. "
+                    "Annotez d'abord quelques images ou utilisez l'import manuel.")
         else:
-            h_img, w_img = img_bgr.shape[:2]
-            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(img_rgb).convert("RGB")
+            has_label = {p.name: (lbl_dir / f"{p.stem}.txt").exists() for p in all_imgs}
 
-            # Démarre le chrono uniquement quand une NOUVELLE paire image/label est importée
-            v_pair_id = f"{v_img.name}:{v_img.size}:{v_lbl.name}:{v_lbl.size}"
-            if st.session_state.get("_verify_pair_id") != v_pair_id:
-                st.session_state["_verify_pair_id"] = v_pair_id
-                annotation_timer.start_timer("verify")
-
-            # Parsing du fichier YOLO (coordonnées normalisées → pixels)
-            bboxes, labels_idx = [], []
-            for line in v_lbl.getvalue().decode("utf-8").strip().split("\n"):
-                parts = line.strip().split()
-                if len(parts) == 5:
-                    try:
-                        cid = int(parts[0])
-                        xc, yc, bw, bh = (float(p) for p in parts[1:])
-                        bboxes.append(
-                            [(xc - bw / 2) * w_img, (yc - bh / 2) * h_img, bw * w_img, bh * h_img]
-                        )
-                        labels_idx.append(min(cid, len(LABEL_LIST) - 1))
-                    except ValueError:
-                        pass
-
-            st.caption(
-                f"**{v_img.name}** — {len(bboxes)} annotation(s) chargée(s) · "
-                "Cliquez **Valider** pour sauvegarder les corrections."
-            )
-
-            v_token = st.session_state.get("_verify_token", 0)
-            v_result = st_detection(
-                image=pil_img,
-                label_list=LABEL_LIST,
-                bboxes=bboxes,
-                labels=labels_idx,
-                height=h_img,
-                width=w_img,
-                line_width=2,
-                use_space=False,
-                color_map=helper.CLASS_COLORS,
-                token=v_token,
-                image_name=v_img.name,
-                start_time_ms=annotation_timer.get_start_time_ms("verify"),
-                key=f"verify_{v_img.name}_{v_token}",
-            )
-
-            if v_result is not None:
-                _save_annotation(
-                    pil_img, v_result, w_img, h_img,
-                    original_name=v_img.name, raw_bytes=v_raw_bytes,
+            col_f1, col_f2 = st.columns([2, 3])
+            with col_f1:
+                v_filter = st.selectbox(
+                    "Filtre",
+                    ["Toutes", "✅ Annotées", "⬜ Sans annotation"],
+                    key="verify_filter",
                 )
-                log_row = annotation_timer.log_annotation("verify", image_name=v_img.name, source="verify", nb_boxes=len(v_result))
-                st.toast(f"Annotation corrigée et sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
-                st.session_state["_verify_token"] = v_token + 1
-                st.rerun()
+            names = [
+                p.name for p in all_imgs
+                if v_filter == "Toutes"
+                or (v_filter == "✅ Annotées" and has_label[p.name])
+                or (v_filter == "⬜ Sans annotation" and not has_label[p.name])
+            ]
+
+            if not names:
+                st.info("Aucune image ne correspond à ce filtre.")
+            else:
+                # Saut de navigation demandé au run précédent (boutons ⬅/➡ ou
+                # auto-avance après sauvegarde) : appliqué AVANT de créer le widget.
+                if "_verify_jump" in st.session_state:
+                    jump = st.session_state.pop("_verify_jump")
+                    if jump in names:
+                        st.session_state["verify_select"] = jump
+                if st.session_state.get("verify_select") not in names:
+                    st.session_state["verify_select"] = names[0]
+
+                with col_f2:
+                    v_name = st.selectbox(
+                        "Image",
+                        names,
+                        key="verify_select",
+                        format_func=lambda n: f"{'✅' if has_label[n] else '⬜'} {n}",
+                    )
+                idx = names.index(v_name)
+
+                col_prev, col_pos, col_next, col_auto = st.columns([1, 1, 1, 2])
+                if col_prev.button("⬅ Précédente", use_container_width=True, disabled=idx == 0):
+                    st.session_state["_verify_jump"] = names[idx - 1]
+                    st.rerun()
+                col_pos.markdown(
+                    f"<div style='text-align:center;padding-top:0.5rem;'><b>{idx + 1} / {len(names)}</b></div>",
+                    unsafe_allow_html=True,
+                )
+                if col_next.button("Suivante ➡", use_container_width=True, disabled=idx == len(names) - 1):
+                    st.session_state["_verify_jump"] = names[idx + 1]
+                    st.rerun()
+                auto_advance = col_auto.checkbox(
+                    "Image suivante après sauvegarde", value=True, key="verify_auto_next"
+                )
+
+                img_path = img_dir / v_name
+                v_raw_bytes = img_path.read_bytes()
+                nparr = np.frombuffer(v_raw_bytes, np.uint8)
+                img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if img_bgr is None:
+                    st.error(f"Impossible de décoder l'image `{v_name}`.")
+                else:
+                    h_img, w_img = img_bgr.shape[:2]
+                    pil_img = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)).convert("RGB")
+
+                    # (Re)démarre le chrono à chaque changement d'image affichée
+                    if st.session_state.get("_verify_current") != v_name:
+                        st.session_state["_verify_current"] = v_name
+                        annotation_timer.start_timer("verify")
+
+                    lbl_path = lbl_dir / f"{Path(v_name).stem}.txt"
+                    pred_key = f"_verify_pred_{v_name}"
+                    if lbl_path.exists():
+                        bboxes, labels_idx = _parse_yolo_label(
+                            lbl_path.read_text(encoding="utf-8"), w_img, h_img
+                        )
+                    elif pred_key in st.session_state:
+                        bboxes, labels_idx = st.session_state[pred_key]
+                    else:
+                        bboxes, labels_idx = [], []
+                        if st.button("🤖 Pré-annoter avec le modèle", key=f"pred_btn_{v_name}"):
+                            with st.spinner("Analyse par le modèle..."):
+                                res = model.predict(img_bgr, conf=conf_threshold)
+                            st.session_state[pred_key] = helper.get_detection_initial_data(res[0])
+                            st.rerun()
+
+                    v_token = st.session_state.get("_verify_token", 0)
+                    v_result = st_detection(
+                        image=pil_img,
+                        label_list=LABEL_LIST,
+                        bboxes=bboxes,
+                        labels=labels_idx,
+                        height=h_img,
+                        width=w_img,
+                        line_width=2,
+                        use_space=False,
+                        color_map=helper.CLASS_COLORS,
+                        token=v_token,
+                        image_name=v_name,
+                        start_time_ms=annotation_timer.get_start_time_ms("verify"),
+                        key=f"verify_ds_{v_name}_{v_token}_{int(pred_key in st.session_state)}",
+                    )
+
+                    if v_result is not None:
+                        _save_annotation(
+                            pil_img, v_result, w_img, h_img,
+                            original_name=v_name, raw_bytes=v_raw_bytes, overwrite=True,
+                        )
+                        log_row = annotation_timer.log_annotation(
+                            "verify", image_name=v_name, source="verify", nb_boxes=len(v_result)
+                        )
+                        st.session_state.pop(pred_key, None)
+                        st.toast(f"Annotation sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
+                        st.session_state["_verify_token"] = v_token + 1
+                        if auto_advance and idx + 1 < len(names):
+                            st.session_state["_verify_jump"] = names[idx + 1]
+                        st.rerun()
+
+    # ── Mode 2 : import manuel d'une paire image + label (secours) ───────────
+    else:
+        st.write("Importez une image et son fichier d'annotation YOLO pour vérifier ou corriger les bboxes.")
+
+        col_v1, col_v2 = st.columns(2)
+        with col_v1:
+            v_img = st.file_uploader("Image", type=["jpg", "jpeg", "png"], key="v_img")
+        with col_v2:
+            v_lbl = st.file_uploader("Annotation YOLO (.txt)", type=["txt"], key="v_lbl")
+
+        if v_img is not None and v_lbl is not None:
+            v_raw_bytes = v_img.getvalue()
+            nparr = np.frombuffer(v_raw_bytes, np.uint8)
+            img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img_bgr is None:
+                st.error("Impossible de décoder l'image.")
+            else:
+                h_img, w_img = img_bgr.shape[:2]
+                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(img_rgb).convert("RGB")
+
+                # Démarre le chrono uniquement quand une NOUVELLE paire image/label est importée
+                v_pair_id = f"{v_img.name}:{v_img.size}:{v_lbl.name}:{v_lbl.size}"
+                if st.session_state.get("_verify_pair_id") != v_pair_id:
+                    st.session_state["_verify_pair_id"] = v_pair_id
+                    annotation_timer.start_timer("verify")
+
+                bboxes, labels_idx = _parse_yolo_label(
+                    v_lbl.getvalue().decode("utf-8"), w_img, h_img
+                )
+
+                st.caption(
+                    f"**{v_img.name}** — {len(bboxes)} annotation(s) chargée(s) · "
+                    "Cliquez **Valider** pour sauvegarder les corrections."
+                )
+
+                v_token = st.session_state.get("_verify_token", 0)
+                v_result = st_detection(
+                    image=pil_img,
+                    label_list=LABEL_LIST,
+                    bboxes=bboxes,
+                    labels=labels_idx,
+                    height=h_img,
+                    width=w_img,
+                    line_width=2,
+                    use_space=False,
+                    color_map=helper.CLASS_COLORS,
+                    token=v_token,
+                    image_name=v_img.name,
+                    start_time_ms=annotation_timer.get_start_time_ms("verify"),
+                    key=f"verify_{v_img.name}_{v_token}",
+                )
+
+                if v_result is not None:
+                    _save_annotation(
+                        pil_img, v_result, w_img, h_img,
+                        original_name=v_img.name, raw_bytes=v_raw_bytes, overwrite=True,
+                    )
+                    log_row = annotation_timer.log_annotation("verify", image_name=v_img.name, source="verify", nb_boxes=len(v_result))
+                    st.toast(f"Annotation corrigée et sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
+                    st.session_state["_verify_token"] = v_token + 1
+                    st.rerun()
