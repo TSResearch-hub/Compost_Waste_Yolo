@@ -741,15 +741,26 @@ with tab_verify:
             with col_f1:
                 v_filter = st.selectbox(
                     "Filtre",
-                    ["Toutes", "✅ Annotées", "⬜ Sans annotation"],
+                    ["Toutes", "✅ Annotées", "⬜ Sans annotation"]
+                    + [f"🏷 {n}" for n in LABEL_LIST],
                     key="verify_filter",
                 )
-            names = [
-                p.name for p in all_imgs
-                if v_filter == "Toutes"
-                or (v_filter == "✅ Annotées" and has_label[p.name])
-                or (v_filter == "⬜ Sans annotation" and not has_label[p.name])
-            ]
+            if v_filter.startswith("🏷 "):
+                # Filtre « contient la classe » : pratique pour repasser sur une
+                # classe suspecte (ex. les Aluminium issus de l'ancien bug de mapping).
+                wanted_cid = LABEL_LIST.index(v_filter.removeprefix("🏷 "))
+                cls_by_stem = dataset_tools.label_classes(lbl_dir)
+                names = [
+                    p.name for p in all_imgs
+                    if wanted_cid in cls_by_stem.get(p.stem, set())
+                ]
+            else:
+                names = [
+                    p.name for p in all_imgs
+                    if v_filter == "Toutes"
+                    or (v_filter == "✅ Annotées" and has_label[p.name])
+                    or (v_filter == "⬜ Sans annotation" and not has_label[p.name])
+                ]
 
             if not names:
                 st.info("Aucune image ne correspond à ce filtre.")
@@ -772,7 +783,7 @@ with tab_verify:
                     )
                 idx = names.index(v_name)
 
-                col_prev, col_pos, col_next, col_auto = st.columns([1, 1, 1, 2])
+                col_prev, col_pos, col_next, col_auto, col_del = st.columns([1, 1, 1, 2, 1])
                 if col_prev.button("⬅ Précédente", use_container_width=True, disabled=idx == 0):
                     st.session_state["_verify_jump"] = names[idx - 1]
                     st.rerun()
@@ -786,6 +797,24 @@ with tab_verify:
                 auto_advance = col_auto.checkbox(
                     "Image suivante après sauvegarde", value=True, key="verify_auto_next"
                 )
+                # Suppression réversible : image + label partent dans
+                # dataset_recolte/corbeille/ (jamais d'effacement définitif).
+                with col_del.popover("🗑 Supprimer", use_container_width=True):
+                    st.markdown(f"Retirer **{v_name}** du dataset ?")
+                    st.caption("Déplacée vers `dataset_recolte/corbeille/` — récupérable à la main.")
+                    if st.button("Confirmer la suppression", key=f"del_{v_name}", use_container_width=True):
+                        dataset_tools.move_to_trash(img_dir, lbl_dir, SAVE_DIR / "corbeille", v_name)
+                        annotation_timer.log_annotation(
+                            "verify", image_name=v_name, source="verify",
+                            nb_boxes=0, status="deleted",
+                        )
+                        st.session_state.pop(f"_verify_pred_{v_name}", None)
+                        if idx + 1 < len(names):
+                            st.session_state["_verify_jump"] = names[idx + 1]
+                        elif idx > 0:
+                            st.session_state["_verify_jump"] = names[idx - 1]
+                        st.toast(f"{v_name} déplacée vers la corbeille", icon="🗑")
+                        st.rerun()
 
                 img_path = img_dir / v_name
                 v_raw_bytes = img_path.read_bytes()
