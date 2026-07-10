@@ -104,7 +104,9 @@ def _display_detected_frames(model, st_frame, image, conf=0.4):
     Effectue l'inférence YOLO sur une frame et met à jour le placeholder vidéo.
     Retourne l'ensemble des classes détectées pour que l'appelant gère les alertes.
     """
-    image = cv2.resize(image, (640, int(640 * (9 / 16))))
+    # Ratio conservé : forcer 640×360 (16:9) déformait les caméras 4:3 — et
+    # c'est cette frame qui part dans le dataset via la capture d'annotation.
+    image = resize_keep_ratio(image, max_w=640, max_h=640)
 
     res = model.predict(image, conf=conf)
     names = model.names
