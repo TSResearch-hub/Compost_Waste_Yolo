@@ -11,3 +11,7 @@ pathlib
 fastapi
 uvicorn[standard]
 python-multipart
+
+# Tests (tests/) : python -m pytest tests/
+pytest
+httpx
