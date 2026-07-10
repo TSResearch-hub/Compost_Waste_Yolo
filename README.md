@@ -54,6 +54,13 @@ Une fois ces nouvelles images annotées, nous réentraînons notre IA.
 
 Ce processus itératif pourra être répété plusieurs fois afin d’augmenter progressivement les performances.  
 
+## 🔁 Boucle d'amélioration continue (outillée de bout en bout)
+
+1. **Annoter** — app PC (`streamlit run app.py`) ou mobile (`python mobile/server.py`) → tout tombe dans `dataset_recolte/`
+2. **Contrôler** — onglet **📊 Dataset** : répartition des classes, anomalies (bboxes fantômes, doublons…) ; onglet **🔍 Vérification** : relecture, correction, corbeille
+3. **Exporter** — bouton d'export de l'onglet Dataset → `exports/export_.../data.yaml` (split train/val stratifié)
+4. **Réentraîner** — `python train.py --data exports/export_.../data.yaml`
+5. **Déployer** — copier le `best.pt` produit vers `weights/best.pt` : l'app PC et le mobile pré-annotent aussitôt avec le nouveau modèle
 
 ## 🎥 Démo vidéo
 [![Voir la vidéo](https://img.youtube.com/vi/SuXwnxzrbc4/0.jpg)](https://www.youtube.com/watch?v=SuXwnxzrbc4)
