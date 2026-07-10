@@ -226,7 +226,7 @@ except Exception as ex:
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTES
 # ══════════════════════════════════════════════════════════════════════════════
-SAVE_DIR = Path("dataset_recolte")
+SAVE_DIR = settings.ROOT / "dataset_recolte"
 LABEL_LIST = list(helper.CLASS_MAP.keys())
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 

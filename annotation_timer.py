@@ -10,11 +10,12 @@ permet de filtrer/grouper les sessions entre elles dans le même fichier.
 import csv
 import time
 from datetime import datetime
-from pathlib import Path
 
 import streamlit as st
 
-CSV_PATH = Path("dataset_recolte") / "annotation_times.csv"
+import settings
+
+CSV_PATH = settings.ROOT / "dataset_recolte" / "annotation_times.csv"
 
 _FIELDNAMES = [
     "session_id",
