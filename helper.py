@@ -1,5 +1,6 @@
 from ultralytics import YOLO
 import time
+import unicodedata
 import streamlit as st
 import cv2
 import settings
@@ -22,13 +23,29 @@ def load_model(model_path):
     return YOLO(model_path)
 
 
+def normalize_class_name(name: str) -> str:
+    """Minuscules + sans accents : le modèle actuel nomme ses classes sans
+    accents (Metal, Ceramique) alors que le référentiel du projet les écrit
+    avec (Métal, Céramique). Toute comparaison de noms passe par ici."""
+    nfkd = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+
+
 def classify_waste_type(detected_items):
-    """Catégorise les éléments détectés selon les listes de settings.py."""
-    recyclable_items = set(detected_items) & set(settings.RECYCLABLE)
-    non_recyclable_items = set(detected_items) & set(settings.NON_RECYCLABLE)
-    matiere_risquee_items = set(detected_items) & set(settings.MATIERE_RISQUEE)
-    dangereux_items = set(detected_items) & set(settings.DANGEREUX)
-    return recyclable_items, non_recyclable_items, matiere_risquee_items, dangereux_items
+    """
+    Répartit les classes détectées entre les 4 niveaux d'alerte de settings.py.
+    Retourne (compostables, non_compostables, risqués, dangereux).
+    """
+    def _match(reference):
+        wanted = {normalize_class_name(r) for r in reference}
+        return {item for item in detected_items if normalize_class_name(item) in wanted}
+
+    return (
+        _match(settings.COMPOSTABLE),
+        _match(settings.NON_COMPOSTABLE),
+        _match(settings.MATIERE_RISQUEE),
+        _match(settings.DANGEREUX),
+    )
 
 
 def remove_dash_from_class_name(class_name):
@@ -91,11 +108,7 @@ def _display_detected_frames(model, st_frame, image, conf=0.4):
 
     res = model.predict(image, conf=conf)
     names = model.names
-
-    # Collecte toutes les classes détectées sur la frame
-    detected_classes = set()
-    for result in res:
-        detected_classes = {names[int(c)] for c in result.boxes.cls}
+    detected_classes = {names[int(c)] for c in res[0].boxes.cls}
 
     res_plotted = res[0].plot()
     st_frame.image(res_plotted, channels="BGR")
@@ -191,33 +204,6 @@ def play_webcam(model, alert_placeholder, auto_capture_interval=0, conf=0.4, cam
             st.error(f"Erreur caméra : {e}")
 
 
-def get_canvas_initial_data(results):
-    """Transforme les résultats YOLO (xywh) en objets pour le canvas streamlit-drawable-canvas."""
-    initial_drawing = {"objects": []}
-    if results:
-        boxes = results.boxes.xywh.cpu().numpy()  # x_center, y_center, w, h
-        clss = results.boxes.cls.cpu().numpy()
-        names = results.names
-
-        for i, box in enumerate(boxes):
-            x_c, y_c, w, h = box
-            left = float(x_c - w / 2)
-            top = float(y_c - h / 2)
-            class_name = names[int(clss[i])]
-
-            initial_drawing["objects"].append({
-                "type": "rect",
-                "left": left,
-                "top": top,
-                "width": float(w),
-                "height": float(h),
-                "fill": "rgba(255, 165, 0, 0.3)",
-                "stroke": CLASS_COLORS.get(class_name, "#ff0000"),
-                "strokeWidth": 2,
-            })
-    return initial_drawing
-
-
 CLASS_MAP = {
     "Plastique": 0,
     "Métal":     1,
@@ -229,6 +215,15 @@ CLASS_MAP = {
     "Verre":     7,
     "Composite": 8,
 }
+
+_NORM_NAME_TO_ID = {normalize_class_name(name): cid for name, cid in CLASS_MAP.items()}
+_warned_unknown_classes: set[str] = set()
+
+
+def class_name_to_id(class_name: str):
+    """Id canonique d'un nom de classe, tolérant accents/casse (Metal → Métal).
+    Retourne None si le nom n'existe pas dans le référentiel CLASS_MAP."""
+    return _NORM_NAME_TO_ID.get(normalize_class_name(class_name))
 
 
 def get_detection_initial_data(results):
@@ -243,7 +238,15 @@ def get_detection_initial_data(results):
         x_c, y_c, w, h = box
         bboxes.append([float(x_c - w / 2), float(y_c - h / 2), float(w), float(h)])
         class_name = names[int(clss[i])]
-        labels.append(CLASS_MAP.get(class_name, 3))
+        cid = class_name_to_id(class_name)
+        if cid is None:
+            # Classe du modèle absente du référentiel : visible en console
+            # plutôt que classée silencieusement au mauvais endroit.
+            if class_name not in _warned_unknown_classes:
+                _warned_unknown_classes.add(class_name)
+                print(f"[helper] Classe modèle inconnue du référentiel : {class_name!r} → {list(CLASS_MAP)[0]}")
+            cid = 0
+        labels.append(cid)
     return bboxes, labels
 
 

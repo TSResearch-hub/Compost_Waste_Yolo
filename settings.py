@@ -22,6 +22,3 @@ NON_COMPOSTABLE = ['Plastique', 'Carton', 'Papier', 'Composite']
 MATIERE_RISQUEE = ['Métal', 'Aluminium']
 
 DANGEREUX = ['Verre', 'Céramique']
-
-RECYCLABLE = NON_COMPOSTABLE
-NON_RECYCLABLE = COMPOSTABLE
