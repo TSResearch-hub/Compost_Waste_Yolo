@@ -5,6 +5,7 @@ import streamlit as st
 import helper
 import settings
 import annotation_timer
+import dataset_tools
 import cv2
 from PIL import Image
 from bbox_editor import detection as st_detection
@@ -121,6 +122,31 @@ div[data-testid="stRadio"] > div { gap: 0.6rem !important; }
     text-align: center; font-size: 0.88rem; line-height: 1.6;
 }
 section[data-testid="stSidebar"] .stMarkdown p { font-size: 0.85rem; }
+
+/* ══ ONGLET DATASET — barres de distribution par classe ══════════════════ */
+/* Couleurs identiques aux bboxes de l'éditeur (identité par entité) ; le
+   nom + l'effectif sont toujours écrits en toutes lettres à côté de la barre,
+   la couleur seule ne porte jamais l'information. */
+.dist-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 110px;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 2px;
+}
+.dist-name {
+    font-size: 0.85rem; font-weight: 600;
+    display: flex; align-items: center; gap: 0.45rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dist-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.dist-track  { background: rgba(128,128,144,0.13); border-radius: 0 4px 4px 0; height: 14px; }
+.dist-bar    { height: 100%; border-radius: 0 4px 4px 0; }
+.dist-count  {
+    font-size: 0.82rem; opacity: 0.85; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.dist-zero .dist-name, .dist-zero .dist-count { opacity: 0.45; }
 
 /* ══ RESPONSIVE — TABLETTES & SMARTPHONES ══════════════════════════════════ */
 
@@ -484,7 +510,9 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
 # ══════════════════════════════════════════════════════════════════════════════
 # ONGLETS PRINCIPAUX
 # ══════════════════════════════════════════════════════════════════════════════
-tab_detection, tab_offline, tab_video, tab_verify = st.tabs(["📹 Détection en direct", "🗂 Annotation hors ligne", "🎬 Extraction vidéo", "🔍 Vérification"])
+tab_detection, tab_offline, tab_video, tab_verify, tab_dataset = st.tabs(
+    ["📹 Détection en direct", "🗂 Annotation hors ligne", "🎬 Extraction vidéo", "🔍 Vérification", "📊 Dataset"]
+)
 
 # ─── ONGLET 1 : DÉTECTION EN DIRECT ──────────────────────────────────────────
 with tab_detection:
@@ -884,3 +912,137 @@ with tab_verify:
                     st.toast(f"Annotation corrigée et sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
                     st.session_state["_verify_token"] = v_token + 1
                     st.rerun()
+
+# ─── ONGLET 5 : DATASET — SANTÉ & EXPORT ─────────────────────────────────────
+with tab_dataset:
+    ds_img_dir = SAVE_DIR / "images"
+    ds_lbl_dir = SAVE_DIR / "labels"
+    ds_images = dataset_tools.list_images(ds_img_dir)
+    dist = dataset_tools.class_distribution(ds_lbl_dir, len(LABEL_LIST))
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Images", len(ds_images))
+    m2.metric("Annotées", dist["n_labels"])
+    m3.metric("Bboxes", dist["total_boxes"])
+    m4.metric("Labels vides (fond)", dist["n_empty"])
+
+    # ── Répartition des classes ───────────────────────────────────────────────
+    st.markdown("#### Répartition des classes")
+    if dist["total_boxes"] == 0:
+        st.info("Aucune annotation pour le moment.")
+    else:
+        max_count = max(dist["counts"]) or 1
+        order = sorted(range(len(LABEL_LIST)), key=lambda i: -dist["counts"][i])
+        rows = []
+        for i in order:
+            name, count = LABEL_LIST[i], dist["counts"][i]
+            pct = 100 * count / dist["total_boxes"]
+            width = 100 * count / max_count
+            color = helper.CLASS_COLORS.get(name, "#888")
+            bar = (
+                f"<div class='dist-bar' style='width:{width:.1f}%;background:{color};'></div>"
+                if count else ""
+            )
+            rows.append(
+                f"<div class='dist-row{' dist-zero' if not count else ''}'>"
+                f"<span class='dist-name'><span class='dist-swatch' style='background:{color};'></span>{name}</span>"
+                f"<div class='dist-track'>{bar}</div>"
+                f"<span class='dist-count'>{count}&nbsp;·&nbsp;{pct:.0f}&thinsp;%</span>"
+                f"</div>"
+            )
+        st.markdown("".join(rows), unsafe_allow_html=True)
+
+        missing = [LABEL_LIST[i] for i in range(len(LABEL_LIST)) if dist["counts"][i] == 0]
+        if missing:
+            st.caption(
+                f"⚠ Classes du référentiel absentes du dataset : **{', '.join(missing)}** — "
+                "le prochain modèle ne saura pas les détecter."
+            )
+
+    st.divider()
+
+    # ── Anomalies ─────────────────────────────────────────────────────────────
+    st.markdown("#### Santé du dataset")
+    if st.button("🔎 Analyser les anomalies"):
+        with st.spinner("Analyse (doublons de contenu inclus)…"):
+            st.session_state["dataset_report"] = dataset_tools.analyze_dataset(
+                ds_img_dir, ds_lbl_dir, len(LABEL_LIST)
+            )
+
+    report = st.session_state.get("dataset_report")
+    if report is not None:
+        if report.n_problems == 0:
+            st.success("Aucune anomalie détectée ✔")
+        else:
+            st.warning(f"{report.n_problems} anomalie(s) à examiner :")
+            if report.orphan_labels:
+                with st.expander(f"🏷 Labels orphelins (sans image) — {len(report.orphan_labels)}"):
+                    st.write("\n".join(f"- `{n}`" for n in report.orphan_labels))
+            if report.invalid_lines:
+                with st.expander(f"⛔ Lignes illisibles — {len(report.invalid_lines)}"):
+                    st.write("\n".join(
+                        f"- `{f}` ligne {ln} : `{content}`" for f, ln, content in report.invalid_lines
+                    ))
+            if report.out_of_range:
+                with st.expander(f"🔢 Classes hors référentiel — {len(report.out_of_range)}"):
+                    st.write("\n".join(
+                        f"- `{f}` ligne {ln} : classe {cid}" for f, ln, cid in report.out_of_range
+                    ))
+            if report.degenerate_boxes:
+                with st.expander(f"📐 Bboxes dégénérées ou hors cadre — {len(report.degenerate_boxes)}"):
+                    st.caption("Boxes quasi nulles (« fantômes » de l'ancien bug de clic) ou dépassant "
+                               "l'image — à corriger dans l'onglet Vérification.")
+                    st.write("\n".join(
+                        f"- `{f}` ligne {ln} : {detail}" for f, ln, detail in report.degenerate_boxes
+                    ))
+            if report.duplicate_groups:
+                with st.expander(f"👯 Images au contenu identique — {len(report.duplicate_groups)} groupe(s)"):
+                    st.caption("Le même contenu sous plusieurs noms fausse le split train/val "
+                               "(la même photo peut se retrouver des deux côtés).")
+                    st.write("\n".join(
+                        "- " + " = ".join(f"`{n}`" for n in grp) for grp in report.duplicate_groups
+                    ))
+        if report.unlabeled_images:
+            st.caption(f"ℹ {len(report.unlabeled_images)} image(s) sans label — à annoter "
+                       "via l'onglet Vérification (filtre « ⬜ Sans annotation »).")
+
+    st.divider()
+
+    # ── Export pour entraînement ──────────────────────────────────────────────
+    st.markdown("#### Export pour entraînement")
+    n_exportable = len({p.stem for p in ds_images} & set(dataset_tools.label_classes(ds_lbl_dir)))
+    st.caption(
+        f"**{n_exportable}** paires image + label exportables. Split stratifié : chaque image est "
+        "rattachée à sa classe la plus rare pour que les classes peu représentées existent aussi "
+        "en validation. Génère `data.yaml` (les 9 classes du référentiel, accents inclus)."
+    )
+    val_pct = st.slider("Part de validation (%)", 10, 40, 20, 5)
+    if st.button("📦 Exporter vers exports/", type="primary", disabled=n_exportable == 0):
+        try:
+            with st.spinner("Copie des images et labels…"):
+                st.session_state["last_export"] = dataset_tools.export_dataset(
+                    ds_img_dir, ds_lbl_dir, settings.ROOT / "exports",
+                    LABEL_LIST, val_ratio=val_pct / 100,
+                )
+        except ValueError as e:
+            st.error(str(e))
+
+    exp = st.session_state.get("last_export")
+    if exp is not None:
+        rel_yaml = exp["yaml_path"].relative_to(settings.ROOT)
+        st.success(
+            f"Export terminé : **{exp['n_train']} train / {exp['n_val']} val** → "
+            f"`{exp['out_dir'].relative_to(settings.ROOT)}`"
+        )
+        table = ["| Classe | Images train | Images val |", "|---|---|---|"] + [
+            f"| {name} | {tr} | {va} |"
+            for name, (tr, va) in exp["per_class"].items() if tr or va
+        ]
+        st.markdown("\n".join(table))
+        st.markdown("**Réentraîner puis déployer :**")
+        st.code(
+            f"python train.py --data {rel_yaml}\n"
+            "# puis copier le best.pt produit (chemin affiché en fin d'entraînement)\n"
+            "# vers weights/best.pt pour que l'app et le mobile l'utilisent",
+            language="bash",
+        )

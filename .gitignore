@@ -26,3 +26,7 @@ dataset_recolte.zip
 
 # Cache des miniatures du serveur mobile
 mobile/.thumb_cache/
+
+# Exports d'entraînement (copies du dataset, volumineux) et runs YOLO
+exports/
+runs/
