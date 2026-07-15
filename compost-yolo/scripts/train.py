@@ -17,6 +17,7 @@ import torch
 import yaml
 from ultralytics import YOLO
 
+from compost_detection.curves import copy_results_preserving_history
 from compost_detection.naming import run_name
 
 
@@ -67,8 +68,12 @@ def main():
     if args.backup_dir:
         def backup_checkpoints(trainer):
             if (trainer.epoch + 1) % args.backup_every == 0:
-                dst = Path(args.backup_dir) / trainer.save_dir.name / "weights"
-                shutil.copytree(trainer.save_dir / "weights", dst, dirs_exist_ok=True)
+                dst = Path(args.backup_dir) / trainer.save_dir.name
+                shutil.copytree(trainer.save_dir / "weights", dst / "weights",
+                                dirs_exist_ok=True)
+                # courbes incluses : sans elles, une VM Colab recyclée les emporte
+                # (après un --resume, l'historique est archivé, jamais écrasé)
+                copy_results_preserving_history(trainer.save_dir, dst)
                 print(f"Checkpoints sauvegardés vers {dst}")
         model.add_callback("on_fit_epoch_end", backup_checkpoints)
 

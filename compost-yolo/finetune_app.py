@@ -1,6 +1,7 @@
 """Interface de fine-tuning — pour réentraîner le modèle sans ligne de commande.
 
 Habillage Streamlit des scripts du repo (aucune logique métier ici) :
+onglet Production -> boucle caméra + infer.py (alertes de alert_rules.yaml),
 onglet Dataset -> update_dataset.py, onglet Réentraîner -> retrain.py,
 onglet Évaluer -> evaluate.py, onglet Résultats -> lecture de runs/.
 
@@ -9,16 +10,23 @@ Lancement :
     streamlit run finetune_app.py
 """
 
+import csv
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 import yaml
+
+from compost_detection.alert import alerting_classes, load_alert_config
+from compost_detection.naming import create_run_dir
 
 ROOT = Path(__file__).resolve().parent
 PYTHON = sys.executable
@@ -101,7 +109,12 @@ def show_eval(run_dir):
     """Affiche les métriques + visuels d'un dossier runs/eval_*."""
     metrics = run_dir / "image_level_metrics.json"
     if metrics.exists():
-        m = json.load(open(metrics, encoding="utf-8"))
+        try:
+            m = json.load(open(metrics, encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            st.warning(f"Métriques illisibles dans {run_dir.name} (évaluation "
+                       "interrompue ? disque plein ?) — dossier à supprimer.")
+            return
         il = m["image_level"]
         c1, c2, c3 = st.columns(3)
         c1.metric("Rappel image (intrus signalés)", f"{il['recall']:.2f}" if il["recall"] is not None else "—")
@@ -120,9 +133,17 @@ def show_eval(run_dir):
             st.image(str(f), caption=legend)
 
 
+@st.cache_resource(show_spinner="Chargement du modèle...")
+def load_model(weights_path):
+    """Charge un .pt une seule fois par session (l'import ultralytics est lourd,
+    on ne le paie qu'au premier usage de l'onglet Production)."""
+    from ultralytics import YOLO
+    return YOLO(weights_path)
+
+
 # ------------------------------------------------------------------- onglets
-tab_data, tab_train, tab_eval, tab_results = st.tabs(
-    ["Dataset", "Réentraîner", "Évaluer", "Résultats"])
+tab_prod, tab_data, tab_train, tab_eval, tab_results = st.tabs(
+    ["Production", "Dataset", "Réentraîner", "Évaluer", "Résultats"])
 
 # ================================================================= DATASET ==
 with tab_data:
@@ -260,10 +281,199 @@ with tab_results:
             st.markdown("#### Avant / après fine-tuning (dernières évals)")
             rows = {}
             for tag, d in (("avant (pré-entraîné)", before), ("après (fine-tuné)", after)):
-                m = json.load(open(d / "image_level_metrics.json", encoding="utf-8"))
+                try:
+                    m = json.load(open(d / "image_level_metrics.json", encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
                 il = m["image_level"]
                 rows[tag] = {"rappel image": round(il["recall"], 3) if il["recall"] is not None else None,
                              "précision image": round(il["precision"], 3) if il["precision"] is not None else None}
-            st.table(rows)
+            if rows:
+                st.table(rows)
         chosen = st.selectbox("Détail d'une évaluation", evals, format_func=lambda d: d.name)
         show_eval(chosen)
+
+# ================================================================ PRODUCTION ==
+# Bloc placé en DERNIER dans le code (mais 1er onglet affiché) : la boucle
+# caméra bloque le script tant que la surveillance tourne, les autres onglets
+# doivent donc avoir été rendus avant d'y entrer.
+with tab_prod:
+    st.subheader("Surveillance du compost")
+    st.markdown(
+        "Le modèle analyse un flux caméra ou un fichier ; toute détection d'un intrus "
+        "au-dessus du seuil de sa classe déclenche une **alerte** avec les consignes de "
+        "retrait. Seuils et consignes : `configs/alert_rules.yaml`.")
+    st.caption("Seuils provisoires, à calibrer par modèle : "
+               "`python scripts/evaluate.py --sweep-thresholds`.")
+    thresholds, instructions = load_alert_config(ROOT / "configs/alert_rules.yaml")
+    min_conf = min(thresholds.values())
+
+    deployed = ROOT.parent / "weights" / "best.pt"
+    prod_weights = [deployed] if deployed.exists() else []
+    prod_weights += sorted((ROOT / "models").glob("*.pt"))
+    prod_weights += sorted((ROOT / "runs").glob("*_*/weights/best.pt"),
+                           key=lambda p: p.stat().st_mtime, reverse=True)
+    if not prod_weights:
+        st.error("Aucun modèle disponible — déployer un best.pt (onglet Réentraîner, "
+                 "case « Déployer ») ou déposer un .pt dans `models/`.")
+    else:
+        w = st.selectbox(
+            "Modèle", prod_weights, key="prod_weights",
+            format_func=lambda p: "déployé — ../weights/best.pt" if p == deployed
+            else (p.parent.parent.name + "/best.pt" if p.parent.name == "weights"
+                  else f"models/{p.name}"))
+        mode = st.radio("Source", ["Caméra en direct", "Tester un fichier (image ou vidéo)"],
+                        horizontal=True)
+
+        # ------------------------------------------------------ caméra en direct
+        if mode == "Caméra en direct":
+            st.session_state.setdefault("prod_running", False)
+            st.session_state.setdefault("prod_alerts", [])
+            st.session_state.setdefault("prod_dir", None)
+            cam = st.text_input(
+                "Caméra : indice (0, 1...) ou URL de flux (http/rtsp)", value="0",
+                help="Sous WSL la webcam USB n'est en général pas visible : lancer l'app "
+                     "depuis Windows, ou utiliser un téléphone en caméra IP et coller son URL.")
+            c1, c2 = st.columns(2)
+            if c1.button("Démarrer la surveillance", type="primary"):
+                st.session_state.prod_running = True
+                st.session_state.prod_alerts = []     # nouvelle session = nouveau journal
+                st.session_state.prod_dir = None
+            if c2.button("Arrêter la surveillance"):
+                st.session_state.prod_running = False
+
+            status_box = st.empty()
+            frame_box = st.empty()
+            info_box = st.empty()
+            st.markdown("**Journal des alertes de la session** — une ligne par événement, "
+                        "frame sauvegardée dans `runs/production_*/frames/`")
+            journal_box = st.empty()
+            if st.session_state.prod_alerts:
+                journal_box.dataframe(st.session_state.prod_alerts)
+
+            past = sorted((d for d in (ROOT / "runs").glob("production_*") if d.is_dir()),
+                          key=lambda d: d.stat().st_mtime, reverse=True)
+            if past:
+                with st.expander("Sessions de surveillance précédentes"):
+                    sel = st.selectbox("Session", past, format_func=lambda d: d.name)
+                    acsv = sel / "alerts.csv"
+                    if acsv.exists():
+                        with open(acsv, encoding="utf-8") as f:
+                            st.dataframe(list(csv.DictReader(f)))
+                        for fr in sorted((sel / "frames").glob("*.jpg"))[:6]:
+                            st.image(str(fr), caption=fr.name, width=320)
+                    else:
+                        st.caption("Aucune alerte enregistrée dans cette session.")
+
+            if st.session_state.prod_running:
+                import cv2  # import local : seulement pour la surveillance
+
+                model = load_model(str(w))
+                src = int(cam.strip()) if cam.strip().isdigit() else cam.strip()
+                cap = cv2.VideoCapture(src)
+                if not cap.isOpened():
+                    st.session_state.prod_running = False
+                    status_box.error(f"Caméra « {cam} » inaccessible — vérifier l'indice ou "
+                                     "l'URL (sous WSL, voir l'aide du champ ci-dessus).")
+                else:
+                    hold_s = 3.0   # l'alerte reste affichée 3 s après la dernière détection
+                    event_open, event_classes, last_trigger = False, set(), 0.0
+                    fps = None
+                    try:
+                        while st.session_state.prod_running:
+                            ok, frame = cap.read()
+                            if not ok:
+                                status_box.error("Flux caméra interrompu.")
+                                break
+                            t0 = time.time()
+                            res = model.predict(frame, conf=min_conf, verbose=False)[0]
+                            dets = [(res.names[int(c)], float(cf), [int(v) for v in box])
+                                    for c, cf, box in zip(res.boxes.cls, res.boxes.conf,
+                                                          res.boxes.xyxy.tolist())]
+                            # seules les détections qui atteignent le seuil DE LEUR classe
+                            kept = [(n, cf, b) for n, cf, b in dets
+                                    if alerting_classes([(n, cf)], thresholds)]
+                            for n, cf, (x1, y1, x2, y2) in kept:
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                                cv2.putText(frame, f"{n} {cf:.2f}", (x1, max(y1 - 8, 14)),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            now = time.time()
+                            if kept:
+                                last_trigger = now
+                                event_classes |= {n for n, _, _ in kept}
+                                if not event_open:  # début d'événement -> journal + snapshot
+                                    event_open = True
+                                    if st.session_state.prod_dir is None:
+                                        d = create_run_dir(ROOT / "runs", "production")
+                                        (d / "frames").mkdir()
+                                        st.session_state.prod_dir = str(d)
+                                    d = Path(st.session_state.prod_dir)
+                                    snap = d / "frames" / f"{datetime.now():%Hh%M-%Ss}.jpg"
+                                    cv2.imwrite(str(snap), frame)
+                                    row = {"horodatage": f"{datetime.now():%d/%m %H:%M:%S}",
+                                           "classes": ", ".join(sorted({n for n, _, _ in kept})),
+                                           "confiance max": round(max(cf for _, cf, _ in kept), 2),
+                                           "frame": snap.name}
+                                    st.session_state.prod_alerts.append(row)
+                                    new_csv = not (d / "alerts.csv").exists()
+                                    with open(d / "alerts.csv", "a", newline="",
+                                              encoding="utf-8") as f:
+                                        wr = csv.DictWriter(f, fieldnames=row.keys())
+                                        if new_csv:
+                                            wr.writeheader()
+                                        wr.writerow(row)
+                                    journal_box.dataframe(st.session_state.prod_alerts)
+                            elif event_open and now - last_trigger > hold_s:
+                                event_open, event_classes = False, set()
+                            if event_open:
+                                status_box.error(
+                                    "ALERTE — intrus : " + ", ".join(sorted(event_classes))
+                                    + "\n\n" + "\n".join(
+                                        f"- {c} : {instructions.get(c, 'retirer cet intrus.')}"
+                                        for c in sorted(event_classes)))
+                            else:
+                                status_box.success("Aucun intrus — flux surveillé.")
+                            frame_box.image(frame, channels="BGR", width="stretch")
+                            dt = time.time() - t0
+                            fps = (1 / dt) if fps is None else 0.9 * fps + 0.1 / dt
+                            info_box.caption(f"{fps:.1f} images/s — modèle : {w.name}")
+                    finally:
+                        cap.release()
+
+        # -------------------------------------------------------- fichier ponctuel
+        else:
+            up = st.file_uploader("Image ou vidéo à analyser",
+                                  type=["jpg", "jpeg", "png", "mp4", "avi", "mov"])
+            if up is not None and st.button("Analyser", type="primary"):
+                src_file = Path(tempfile.mkdtemp(prefix="production_")) / up.name
+                src_file.write_bytes(up.getbuffer())
+                log = st.empty()
+                code, _ = stream_command(
+                    ["scripts/infer.py", "--weights", str(w), "--source", str(src_file),
+                     "--alert-rules", "configs/alert_rules.yaml", "--conf", str(min_conf)],
+                    log)
+                if code != 0:
+                    st.error("Échec — voir le journal.")
+                else:
+                    run_dir = max((ROOT / "runs").glob("infer_*"),
+                                  key=lambda p: p.stat().st_mtime)
+                    recs = json.load(open(run_dir / "detections.json", encoding="utf-8"))
+                    n_alert = sum(bool(r.get("alert")) for r in recs)
+                    triggered = alerting_classes(
+                        [(det["class"], det["confidence"])
+                         for r in recs for det in r["detections"]], thresholds)
+                    if n_alert:
+                        st.error(f"ALERTE — intrus sur {n_alert}/{len(recs)} "
+                                 "image(s)/frame(s) : " + ", ".join(triggered))
+                        for c in triggered:
+                            st.markdown(f"- **{c}** : {instructions.get(c, 'retirer cet intrus.')}")
+                    else:
+                        st.success(f"Aucun intrus détecté "
+                                   f"({len(recs)} image(s)/frame(s) analysée(s)).")
+                    for img in sorted(list(run_dir.glob("*.jpg")) + list(run_dir.glob("*.png")))[:6]:
+                        st.image(str(img), caption=img.name)
+                    for vid in sorted(run_dir.glob("*.mp4")):
+                        st.video(str(vid))
+                    for vid in sorted(run_dir.glob("*.avi")):
+                        st.caption(f"Vidéo annotée (AVI, non lisible dans le navigateur) : `{vid}`")
+                    st.caption(f"Détails : `{run_dir}/detections.json`")

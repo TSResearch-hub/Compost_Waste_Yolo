@@ -94,7 +94,8 @@ def main():
     run(["scripts/split_captures.py", "--source", args.captures, "--output", workdir,
          "--test-fraction", str(args.test_fraction), "--seed", str(args.seed)])
     run(["scripts/prepare_dataset.py", "--source", f"{workdir}/captures_finetune",
-         "--output", f"{workdir}/dataset_finetune", "--ratios", "0.85", "0.15", "0"])
+         "--output", f"{workdir}/dataset_finetune", "--ratios", "0.85", "0.15", "0",
+         "--symlink"])   # liens symboliques : économise le disque, sources figées
 
     # 3. éval AVANT (référence : le pré-entraîné sur le test compost)
     if not args.skip_eval_before:
