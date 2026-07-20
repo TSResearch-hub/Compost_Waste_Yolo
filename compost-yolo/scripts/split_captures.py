@@ -117,7 +117,10 @@ def pairs_preview(dispo_images, path, thumb_h=180, cols=3):
     multi = {d: imgs for d, imgs in dispo_images.items() if len(imgs) > 1}
     if not multi:
         return 0
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+    try:  # police absente sur certains environnements (Colab) : repli intégré PIL
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+    except OSError:
+        font = ImageFont.load_default()
     cells = []
     for dispo, imgs in sorted(multi.items()):
         anchor = next((i for i in imgs if i.stem == dispo), imgs[0])
