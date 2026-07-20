@@ -33,6 +33,8 @@ PYTHON = sys.executable
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 # ligne d'epoch d'Ultralytics : «   12/50   2.35G   1.234  ... » (n/total puis mémoire)
 EPOCH_LINE = re.compile(r"^\s*(\d+)/(\d+)\s+[\d.]+G?\s")
+# codes ANSI (couleurs, effacement de ligne) émis par Ultralytics dans ses journaux
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 st.set_page_config(page_title="Compost — fine-tuning", layout="wide")
 st.title("Fine-tuning du détecteur d'intrus")
@@ -47,6 +49,8 @@ def stream_command(cmd, log_box, progress_bar=None):
                             env={**os.environ, "MPLBACKEND": "Agg"})
     lines = []
     for line in proc.stdout:
+        # barre de progression : ne garder que l'état final (après le dernier \r)
+        line = ANSI_RE.sub("", line.rstrip("\n").split("\r")[-1])
         lines.append(line.rstrip())
         log_box.code("\n".join(lines[-30:]), language=None)
         if progress_bar is not None and (m := EPOCH_LINE.match(line)):
@@ -83,9 +87,8 @@ def dataset_stats(dataset):
     groups = {}
     gcsv = dataset / "groups.csv"
     if gcsv.exists():
-        import csv as _csv
         with open(gcsv, encoding="utf-8") as f:
-            groups = {r["stem"]: r["group_id"] for r in _csv.DictReader(f)}
+            groups = {r["stem"]: r["group_id"] for r in csv.DictReader(f)}
     for img in (dataset / "images").iterdir():
         if img.suffix.lower() not in IMAGE_SUFFIXES:
             continue
@@ -123,14 +126,20 @@ def show_eval(run_dir):
         c3.metric("Fausses alertes / image sans intrus",
                   f"{neg['mean_intruder_detections']:.2f}" if neg.get("mean_intruder_detections") is not None else "—")
         if "weights" in m:
-            st.caption(f"Modèle évalué : `{m['weights']}`")
-    for png, legend in [("per_class_metrics.png", "Métriques par classe (niveau boîte)"),
-                        ("confusion_matrices.png", "Confusion par classe (niveau image)"),
-                        ("ultralytics_val/confusion_matrix_normalized.png",
-                         "Confusion niveau instance (7 classes + background)")]:
+            src = f"Modèle évalué : `{m['weights']}`"
+            if m.get("data"):
+                src += f" — données : `{m['data']}`"
+            st.caption(src)
+    c1, c2 = st.columns(2)
+    for col, png, legend in [(c1, "per_class_metrics.png", "Métriques par classe (niveau boîte)"),
+                             (c2, "confusion_matrices.png", "Confusion par classe (niveau image)")]:
         f = run_dir / png
         if f.exists():
-            st.image(str(f), caption=legend)
+            col.image(str(f), caption=legend)
+    f = run_dir / "ultralytics_val/confusion_matrix_normalized.png"
+    if f.exists():
+        with st.expander(f"Confusion niveau instance ({len(class_names())} classes + background)"):
+            st.image(str(f))
 
 
 @st.cache_resource(show_spinner="Chargement du modèle...")
@@ -142,16 +151,22 @@ def load_model(weights_path):
 
 
 # ------------------------------------------------------------------- onglets
+_snap = latest_snapshot()
+_deployed = ROOT.parent / "weights" / "best.pt"
+st.caption(
+    "Dataset courant : " + (f"`{_snap.name}`" if _snap else "aucun")
+    + " — modèle déployé : "
+    + (f"`../weights/best.pt` du {datetime.fromtimestamp(_deployed.stat().st_mtime):%d/%m %H:%M}"
+       if _deployed.exists() else "aucun"))
+
 tab_prod, tab_data, tab_train, tab_eval, tab_results = st.tabs(
     ["Production", "Dataset", "Réentraîner", "Évaluer", "Résultats"])
 
 # ================================================================= DATASET ==
 with tab_data:
     st.subheader("Mettre à jour le dataset")
-    st.markdown(
-        "Chaque mise à jour crée un **nouveau snapshot figé** (`data/captures/vNNN_date`) "
-        "à partir du précédent + les annotations des sources. Les anciens snapshots ne "
-        "bougent jamais : chaque entraînement reste reproductible.")
+    st.caption("Chaque mise à jour crée un snapshot figé (`data/captures/vNNN_date`) — "
+               "les anciens ne bougent jamais, chaque entraînement reste reproductible.")
     default_src = str((ROOT.parent / "dataset_recolte").resolve())
     sources_text = st.text_area(
         "Sources d'annotations (une par ligne — un dossier par poste d'annotation)",
@@ -191,38 +206,37 @@ with tab_data:
 # ============================================================= RÉENTRAÎNER ==
 with tab_train:
     st.subheader("Réentraîner le modèle (fine-tuning)")
-    st.markdown(
-        "Enchaîne automatiquement : split (test compost préservé) → **éval avant** "
-        "(pré-entraîné) → **fine-tuning** → **éval après** (même test).")
+    st.caption("Split → éval avant → fine-tuning → éval après (même test compost).")
     pretrains = sorted((ROOT / "models").glob("*.pt"))
     if not pretrains:
         st.error("Aucun modèle pré-entraîné dans `models/` — déposer un "
                  "`pretrain_*.pt` (voir README).")
     else:
-        pretrain = st.selectbox("Modèle pré-entraîné de départ", pretrains,
-                                format_func=lambda p: p.name)
-        st.caption(
-            "Ce même fichier sert à l'éval « avant » ET de point de départ du "
-            "fine-tuning (garanti par retrain.py). L'architecture (YOLO / RT-DETR) "
-            "est contenue dans le .pt : le fine-tuning produit forcément le même modèle. "
-            "On ne repart jamais d'un fine-tuné précédent.")
-        c1, c2, c3, c4 = st.columns(4)
-        epochs = c1.number_input("Epochs", 1, 300, 50)
-        batch = c2.number_input("Batch", 1, 64, 8,
-                                help="baisser à 4 si mémoire GPU insuffisante")
-        lr0 = c3.number_input("Learning rate initial", min_value=0.00001, max_value=0.1,
-                              value=0.001, step=0.0005, format="%.4f",
-                              help="bas (0.001) = départ doux, ne casse pas le pré-entraînement ; "
-                                   "le défaut Ultralytics (~0.01) est trop agressif pour un fine-tuning")
-        deploy = c4.checkbox("Déployer à la fin",
-                             help="copie le best.pt final vers ../weights/best.pt (interface d'annotation)")
+        pretrain = st.selectbox(
+            "Modèle pré-entraîné de départ", pretrains, format_func=lambda p: p.name,
+            help="Seuls les pré-entraînés canoniques de `models/` sont proposés : on ne "
+                 "repart jamais d'un fine-tuné précédent (le split change quand le dataset "
+                 "grandit, le test aurait déjà été appris). Ce même fichier sert à l'éval "
+                 "« avant » et de point de départ du fine-tuning ; l'architecture "
+                 "(YOLO / RT-DETR) est contenue dans le .pt.")
+        is_rtdetr = "rtdetr" in pretrain.name.lower()
+        c1, c2, c3 = st.columns(3)
+        epochs = c1.number_input("Epochs", 1, 300, 30,
+                                 help="~25-30 suffisent sur nos volumes actuels (les courbes "
+                                      "sur-apprennent au-delà) ; best.pt garde le pic de toute façon")
+        batch = c2.number_input("Batch", 1, 64, 4 if is_rtdetr else 8,
+                                help="RT-DETR : 4 max sur 8 Go de VRAM ; YOLO : 8 passe")
+        deploy = c3.checkbox("Déployer à la fin",
+                             help="copie le best.pt final vers ../weights/best.pt "
+                                  "(le modèle des interfaces)")
         snap = latest_snapshot()
-        st.caption(f"Dataset utilisé : `{snap.name if snap else '—'}` (le dernier snapshot)")
+        st.caption(f"Dataset : `{snap.name if snap else '—'}` (dernier snapshot)"
+                   + (" — RT-DETR local : ~15-30 min/epoch, préférer le terminal "
+                      "pour un run long (`scripts/retrain.py`)." if is_rtdetr else ""))
         if st.button("Lancer le réentraînement", type="primary"):
-            st.info("Compter plusieurs minutes — suivre la barre et le journal ci-dessous.")
+            st.info("Progression ci-dessous — garder l'onglet ouvert jusqu'à la fin.")
             cmd = ["scripts/retrain.py", "--pretrain", str(pretrain),
-                   "--epochs", str(int(epochs)), "--batch", str(int(batch)),
-                   "--lr0", str(lr0)]
+                   "--epochs", str(int(epochs)), "--batch", str(int(batch))]
             if deploy:
                 cmd.append("--deploy")
             bar = st.progress(0.0, text="Préparation (split + éval avant)...")
@@ -286,10 +300,15 @@ with tab_results:
                 except (json.JSONDecodeError, OSError):
                     continue
                 il = m["image_level"]
+                neg = m.get("negatives", {})
                 rows[tag] = {"rappel image": round(il["recall"], 3) if il["recall"] is not None else None,
-                             "précision image": round(il["precision"], 3) if il["precision"] is not None else None}
+                             "précision image": round(il["precision"], 3) if il["precision"] is not None else None,
+                             "fausses alertes / img sans intrus":
+                                 round(neg["mean_intruder_detections"], 2)
+                                 if neg.get("mean_intruder_detections") is not None else None}
             if rows:
                 st.table(rows)
+                st.caption(f"Runs comparés : `{before.name}` (avant) vs `{after.name}` (après).")
         chosen = st.selectbox("Détail d'une évaluation", evals, format_func=lambda d: d.name)
         show_eval(chosen)
 
@@ -299,14 +318,9 @@ with tab_results:
 # doivent donc avoir été rendus avant d'y entrer.
 with tab_prod:
     st.subheader("Surveillance du compost")
-    st.markdown(
-        "Le modèle analyse un flux caméra ou un fichier ; toute détection d'un intrus "
-        "au-dessus du seuil de sa classe déclenche une **alerte** avec les consignes de "
-        "retrait. Seuils et consignes : `configs/alert_rules.yaml`.")
-    st.caption("Seuils provisoires, à calibrer par modèle : "
-               "`python scripts/evaluate.py --sweep-thresholds`.")
+    st.caption("Un intrus au-dessus du seuil de sa classe déclenche une alerte avec consignes "
+               "(`configs/alert_rules.yaml` — calibration : `evaluate.py --sweep-thresholds`).")
     thresholds, instructions = load_alert_config(ROOT / "configs/alert_rules.yaml")
-    min_conf = min(thresholds.values())
 
     deployed = ROOT.parent / "weights" / "best.pt"
     prod_weights = [deployed] if deployed.exists() else []
@@ -324,6 +338,16 @@ with tab_prod:
                   else f"models/{p.name}"))
         mode = st.radio("Source", ["Caméra en direct", "Tester un fichier (image ou vidéo)"],
                         horizontal=True)
+        # réglage à la volée pour les deux modes ; le yaml reste la référence
+        # calibrée (un changement pendant la surveillance relance la boucle)
+        with st.expander("Seuils par classe (défauts : configs/alert_rules.yaml)"):
+            cols = st.columns(2)
+            thresholds = {
+                name: cols[i % 2].slider(name, 0.05, 0.95, float(default), 0.05,
+                                         key=f"prod_thr_{name}")
+                for i, (name, default) in enumerate(sorted(thresholds.items()))
+            }
+        min_conf = min(thresholds.values())
 
         # ------------------------------------------------------ caméra en direct
         if mode == "Caméra en direct":
@@ -433,6 +457,10 @@ with tab_prod:
                                         for c in sorted(event_classes)))
                             else:
                                 status_box.success("Aucun intrus — flux surveillé.")
+                            # cadre rouge = alerte en cours, vert = rien à signaler
+                            edge = (0, 0, 255) if event_open else (0, 170, 0)
+                            frame = cv2.copyMakeBorder(frame, 12, 12, 12, 12,
+                                                       cv2.BORDER_CONSTANT, value=edge)
                             frame_box.image(frame, channels="BGR", width="stretch")
                             dt = time.time() - t0
                             fps = (1 / dt) if fps is None else 0.9 * fps + 0.1 / dt
@@ -447,10 +475,15 @@ with tab_prod:
             if up is not None and st.button("Analyser", type="primary"):
                 src_file = Path(tempfile.mkdtemp(prefix="production_")) / up.name
                 src_file.write_bytes(up.getbuffer())
+                # infer.py lit ses seuils dans un yaml : on lui passe ceux des sliders
+                rules_file = src_file.parent / "alert_rules.yaml"
+                rules_file.write_text(
+                    yaml.safe_dump({"intruder_thresholds": thresholds}, allow_unicode=True),
+                    encoding="utf-8")
                 log = st.empty()
                 code, _ = stream_command(
                     ["scripts/infer.py", "--weights", str(w), "--source", str(src_file),
-                     "--alert-rules", "configs/alert_rules.yaml", "--conf", str(min_conf)],
+                     "--alert-rules", str(rules_file), "--conf", str(min_conf)],
                     log)
                 if code != 0:
                     st.error("Échec — voir le journal.")
