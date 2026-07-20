@@ -1,0 +1,9 @@
+# Hyperparamètres d'entraînement par défaut.
+# Tout est surchargeable en CLI : python scripts/train.py --epochs 50 --model yolo11n.pt
+
+model: yolov8n.pt   # modèle pré-entraîné Ultralytics (yolov8n.pt ou yolo11n.pt)
+epochs: 100
+imgsz: 640
+batch: 16
+patience: 20        # early stopping (epochs sans amélioration)
+seed: 42            # reproductibilité

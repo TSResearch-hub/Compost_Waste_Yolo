@@ -1,0 +1,146 @@
+# Correspondance pour TACO (fork ali-ikched de roboflow-universe-projects/
+# taco-object-detection-kcxyn, version sans augmentations).
+# Licence : CC BY 4.0 (attribution) pour les annotations ; images issues de
+# Flickr (licences variées) — citer TACO (Proença & Simões 2020, tacodataset.org).
+#
+# Choix de mapping discutables, assumés ici (à documenter dans le rapport) :
+# - Aerosol -> Metal (certains sprays sont en alu)
+# - Drink carton -> Carton (brique Tetra Pak : matière mixte mais visuellement un
+#   carton ; Composite est réservé aux piles/items dangereux, voir ci-dessous)
+# - Crisp packet -> Plastique (film, visuellement plastique)
+# - Battery -> Composite (Composite = items dangereux/complexes : piles/batteries)
+# - Styrofoam/Foam -> Plastique (polystyrène)
+# - PAPIER (Normal/Magazine/Wrapping paper, Paper bag/cup/straw, Tissues) -> null :
+#   compostable, donc ignoré. Carton (cartons épais) reste un intrus.
+
+# Export Roboflow en polygones de segmentation -> convertis en boîtes à l'import
+format: yolo-seg
+
+source_names:
+  - Aerosol
+  - Aluminium blister pack
+  - Aluminium foil
+  - Battery
+  - Broken glass
+  - Carded blister pack
+  - Cigarette
+  - Clear plastic bottle
+  - Corrugated carton
+  - Crisp packet
+  - Disposable food container
+  - Disposable plastic cup
+  - Drink can
+  - Drink carton
+  - Egg carton
+  - Foam cup
+  - Foam food container
+  - Food Can
+  - Food waste
+  - Garbage bag
+  - Glass bottle
+  - Glass cup
+  - Glass jar
+  - Magazine paper
+  - Meal carton
+  - Metal bottle cap
+  - Metal lid
+  - Normal paper
+  - Other carton
+  - Other plastic
+  - Other plastic bottle
+  - Other plastic container
+  - Other plastic cup
+  - Other plastic wrapper
+  - Paper bag
+  - Paper cup
+  - Paper straw
+  - Pizza box
+  - Plastic bottle cap
+  - Plastic film
+  - Plastic glooves
+  - Plastic lid
+  - Plastic straw
+  - Plastic utensils
+  - Polypropylene bag
+  - Pop tab
+  - Rope - strings
+  - Scrap metal
+  - Shoe
+  - Single-use carrier bag
+  - Six pack rings
+  - Spread tub
+  - Squeezable tube
+  - Styrofoam piece
+  - Tissues
+  - Toilet tube
+  - Tupperware
+  - Unlabeled litter
+  - Wrapping paper
+
+class_map:
+  # --- Aluminium ---
+  Drink can: Aluminium
+  Aluminium foil: Aluminium
+  Aluminium blister pack: Aluminium
+  Pop tab: Aluminium
+  # --- Metal (acier) ---
+  Food Can: Metal
+  Metal bottle cap: Metal
+  Metal lid: Metal
+  Scrap metal: Metal
+  Aerosol: Metal
+  # --- Carton (cartons épais + briques ; le papier fin va en null) ---
+  Corrugated carton: Carton
+  Other carton: Carton
+  Egg carton: Carton
+  Meal carton: Carton
+  Pizza box: Carton
+  Toilet tube: Carton
+  Drink carton: Carton      # brique Tetra Pak (rangée en Carton, pas Composite)
+  # --- Verre ---
+  Glass bottle: Verre
+  Glass cup: Verre
+  Glass jar: Verre
+  Broken glass: Verre
+  # --- Composite = items dangereux/complexes (piles/batteries) ---
+  Battery: Composite
+  # --- Plastique ---
+  Clear plastic bottle: Plastique
+  Other plastic bottle: Plastique
+  Plastic bottle cap: Plastique
+  Plastic lid: Plastique
+  Plastic film: Plastique
+  Plastic straw: Plastique
+  Plastic utensils: Plastique
+  Plastic glooves: Plastique
+  Other plastic: Plastique
+  Other plastic container: Plastique
+  Other plastic cup: Plastique
+  Other plastic wrapper: Plastique
+  Disposable food container: Plastique
+  Disposable plastic cup: Plastique
+  Garbage bag: Plastique
+  Polypropylene bag: Plastique
+  Single-use carrier bag: Plastique
+  Six pack rings: Plastique
+  Spread tub: Plastique
+  Squeezable tube: Plastique
+  Tupperware: Plastique
+  Styrofoam piece: Plastique
+  Foam cup: Plastique
+  Foam food container: Plastique
+  Crisp packet: Plastique      # film métallisé, visuellement plastique
+  # --- Ignorés : PAPIER (compostable) + organique + hors-projet ---
+  Normal paper: null
+  Magazine paper: null
+  Wrapping paper: null
+  Paper bag: null
+  Paper cup: null
+  Paper straw: null
+  Tissues: null
+  Food waste: null
+  Cigarette: null
+  Shoe: null
+  Rope - strings: null
+  Carded blister pack: null
+  Unlabeled litter: null

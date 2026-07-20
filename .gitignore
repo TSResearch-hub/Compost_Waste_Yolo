@@ -21,12 +21,11 @@ dataset_recolte.zip
 # Fichiers parasites Windows/WSL (métadonnées de téléchargement)
 *Zone.Identifier
 
-# Configuration locale Claude Code
-.claude/
-
 # Cache des miniatures du serveur mobile
 mobile/.thumb_cache/
 
 # Exports d'entraînement (copies du dataset, volumineux) et runs YOLO
 exports/
 runs/
+# Données annotées (non versionnées : volumineuses, vivent dans datasets/)
+dataset_recolte/

@@ -1,0 +1,27 @@
+# Exemple de table de correspondance pour scripts/import_dataset.py.
+# En copier une par dataset importé (ex. configs/import_trashnet.yaml).
+
+# Format des labels du dataset source. Implémenté : yolo.
+# Autre format (COCO, VOC...) : ajouter une fonction dans PARSERS du script.
+format: yolo
+
+# Classes du dataset SOURCE, dans l'ordre de leurs ids
+# (en général la liste `names` de son data.yaml).
+source_names:
+  - cardboard
+  - glass
+  - metal
+  - paper
+  - plastic
+  - trash
+
+# Correspondance classe source -> classe de configs/data.yaml.
+# null (ou clé absente) = annotations de cette classe ignorées ;
+# si plus rien ne reste sur une image, elle est gardée comme négative.
+class_map:
+  cardboard: Carton
+  glass: Verre
+  metal: Metal
+  paper: null          # papier = compostable -> ignoré (Carton = cartons épais)
+  plastic: Plastique
+  trash: null
