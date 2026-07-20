@@ -29,9 +29,12 @@ class _FakeTensor:
         return self._arr
 
 
-def _fake_results(xywh, cls_ids, names=MODEL_NAMES):
+def _fake_results(xywh, cls_ids, names=MODEL_NAMES, conf=None):
+    if conf is None:
+        conf = [1.0] * len(cls_ids)
     return SimpleNamespace(
-        boxes=SimpleNamespace(xywh=_FakeTensor(xywh), cls=_FakeTensor(cls_ids)),
+        boxes=SimpleNamespace(xywh=_FakeTensor(xywh), cls=_FakeTensor(cls_ids),
+                              conf=_FakeTensor(conf)),
         names=names,
     )
 
@@ -83,6 +86,25 @@ def test_pre_annotation_classe_inconnue_fallback_premiere_classe():
 
 def test_resultats_vides():
     assert helper.get_detection_initial_data(None) == ([], [])
+
+
+def test_seuils_par_classe_filtrent_la_pre_annotation():
+    # Metal 0.9 (gardé), Ceramique 0.3 (gardée : seuil 0.25), Metal 0.2 (écarté : seuil 0.5)
+    res = _fake_results(
+        xywh=[[100, 100, 40, 20], [300, 200, 60, 80], [50, 50, 10, 10]],
+        cls_ids=[1, 4, 1],
+        conf=[0.9, 0.3, 0.2],
+    )
+    conf_by_id = {helper.CLASS_MAP["Métal"]: 0.5, helper.CLASS_MAP["Céramique"]: 0.25}
+    bboxes, labels = helper.get_detection_initial_data(res, conf_by_id)
+    assert labels == [helper.CLASS_MAP["Métal"], helper.CLASS_MAP["Céramique"]]
+    assert len(bboxes) == 2
+
+
+def test_sans_seuils_par_classe_tout_est_garde():
+    res = _fake_results(xywh=[[10, 10, 4, 4]], cls_ids=[1], conf=[0.05])
+    _, labels = helper.get_detection_initial_data(res)
+    assert labels == [helper.CLASS_MAP["Métal"]]
 
 
 # ── classify_waste_type ──────────────────────────────────────────────────────

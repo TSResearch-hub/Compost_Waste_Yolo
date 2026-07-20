@@ -256,12 +256,34 @@ SAVE_DIR = settings.ROOT / "dataset_recolte"
 LABEL_LIST = list(helper.CLASS_MAP.keys())
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
+# Côté max de l'image DANS L'ÉDITEUR : les photos 3000×4000 rendaient Konva
+# poussif. Le ratio est conservé et les labels YOLO sont normalisés (0-1) avec
+# les dimensions de l'image affichée, donc les coordonnées restent exactes pour
+# l'image originale — qui, elle, est toujours sauvegardée pleine résolution.
+MAX_EDIT_SIDE = 1500
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR — réglages profonds + stats du dataset
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.title("⚙️ Paramètres")
     conf_threshold = st.slider("Seuil de confiance", 0.1, 0.95, 0.4, 0.05)
+
+    # Seuils de pré-annotation par classe : utile quand le modèle est fiable
+    # sur une classe (seuil haut = moins de faux positifs à supprimer) et
+    # hésitant sur une autre (seuil bas = moins de bboxes à dessiner à la main).
+    with st.expander("🎚 Seuils par classe (pré-annotation)"):
+        per_class_on = st.checkbox("Personnaliser par classe", key="per_class_conf_on")
+        st.caption(
+            "Appliqués aux pré-annotations de l'éditeur (hors ligne, vérification, "
+            "captures). Le direct garde le seuil global. Modifiable en cours de lot : "
+            "utilisez **🤖 Re-pré-annoter** sous l'éditeur pour ré-appliquer."
+        )
+        class_conf = {
+            cid: st.slider(name, 0.05, 0.95, conf_threshold, 0.05,
+                           key=f"conf_cls_{cid}", disabled=not per_class_on)
+            for name, cid in helper.CLASS_MAP.items()
+        }
 
     # Sélection caméra par liste (plus d'index manuel aveugle)
     cameras = scan_available_cameras()
@@ -294,6 +316,13 @@ with st.sidebar:
 
     st.divider()
     st.caption("Composte IA · Station de compostage")
+
+# Seuils effectifs de pré-annotation : par classe si activé, sinon le global.
+CONF_BY_ID = class_conf if per_class_on else {cid: conf_threshold for cid in helper.CLASS_MAP.values()}
+# Le predict tourne sous le plus bas des seuils : on récupère large une fois,
+# le tri fin se fait ensuite par classe (et reste re-jouable sans re-predict
+# si les seuils changent en cours de route).
+PRED_CONF = min(0.1, *CONF_BY_ID.values())
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITAIRES CANVAS & SAUVEGARDE
@@ -396,7 +425,7 @@ def _parse_yolo_label(text, w_img, h_img):
 def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
     """
     Post-sauvegarde/annulation : enchaîne automatiquement sur l'image suivante.
-    - offline_mode=True  → avance dans offline_queue (onglet hors ligne)
+    - offline_mode=True  → avance vers la prochaine image non annotée d'offline_items
     - offline_mode=False → avance dans capture_queue (webcam)
     """
     st.session_state["_annot_token"] = st.session_state.get("_annot_token", 0) + 1
@@ -405,10 +434,13 @@ def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
         return  # Cas hors ligne image unique (legacy)
 
     if offline_mode:
-        # Pop l'image courante ; le prochain rendu de tab_offline affichera la suivante
-        queue = st.session_state.get("offline_queue", [])
-        if queue:
-            queue.pop(0)
+        # Avance vers la prochaine image non annotée du lot (après l'image
+        # courante, sinon la première restante) ; le lot reste navigable.
+        items = st.session_state.get("offline_items", [])
+        idx = st.session_state.get("offline_idx", 0)
+        pending = [i for i, it in enumerate(items) if not it.get("saved_name")]
+        if pending:
+            st.session_state["offline_idx"] = next((i for i in pending if i > idx), pending[0])
     else:
         # Mode webcam : avance dans capture_queue
         queue = st.session_state.get("capture_queue", [])
@@ -422,11 +454,21 @@ def _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=False):
     st.rerun()
 
 
+def _offline_goto(i):
+    """Navigation manuelle dans le lot hors ligne (⬅/➡/sélecteur)."""
+    st.session_state["offline_idx"] = i
+    st.session_state["_annot_token"] = st.session_state.get("_annot_token", 0) + 1
+    _reset_canvas_state("canvas_offline")
+    st.rerun()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ÉDITEUR D'ANNOTATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=True, offline_mode=False, original_name=None, raw_bytes=None):
+def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=True, offline_mode=False,
+                           original_name=None, raw_bytes=None, initial_data=None, conf_by_id=None,
+                           overwrite=False, on_saved=None):
     """
     Éditeur d'annotation YOLO basé sur streamlit_image_annotation (Konva).
 
@@ -446,10 +488,15 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
     _data_key    = f"{canvas_key}_data"
     _counter_key = f"{canvas_key}_clear_counter"
 
-    # Réinitialise les bboxes quand l'image change
+    # Réinitialise les bboxes quand l'image change.
+    # initial_data (bboxes, labels) prime sur la pré-annotation du modèle :
+    # sert à recharger une annotation déjà sauvegardée (revisite dans un lot).
     if st.session_state.get(_imgid_key) != id(raw_img):
         st.session_state[_imgid_key]   = id(raw_img)
-        bboxes, labels = helper.get_detection_initial_data(last_res)
+        if initial_data is not None:
+            bboxes, labels = initial_data
+        else:
+            bboxes, labels = helper.get_detection_initial_data(last_res, conf_by_id)
         st.session_state[_data_key]    = {"bboxes": bboxes, "labels": labels}
         st.session_state[_counter_key] = 0
         annotation_timer.start_timer(canvas_key)
@@ -483,18 +530,30 @@ def show_annotation_editor(raw_img, last_res, canvas_key, exit_mode_annotation=T
 
     # ── Sauvegarde déclenchée par "Complete" dans le composant ────────────────
     if result is not None:
-        saved_name = _save_annotation(pil_img, result, w_img, h_img, original_name=original_name, raw_bytes=raw_bytes)
+        saved_name = _save_annotation(pil_img, result, w_img, h_img, original_name=original_name,
+                                      raw_bytes=raw_bytes, overwrite=overwrite)
+        if on_saved is not None:
+            on_saved(saved_name)
         log_row = annotation_timer.log_annotation(canvas_key, image_name=saved_name, source=source, nb_boxes=len(result))
         st.toast(f"Annotation sauvegardée ! (⏱ {log_row['duration_display']})", icon="✅")
         _exit_annotation(canvas_key, exit_mode_annotation, offline_mode=offline_mode)
 
     # ── Boutons complémentaires ───────────────────────────────────────────────
     st.write("")
-    col_clear, col_cancel = st.columns([1, 1])
+    col_clear, col_reannot, col_cancel = st.columns([1, 1, 1])
 
     with col_clear:
         if st.button("🗑 Effacer tout", key=f"clear_{canvas_key}", use_container_width=True):
             st.session_state[_data_key]    = {"bboxes": [], "labels": []}
+            st.session_state[_counter_key] = clear_counter + 1
+            st.rerun()
+
+    with col_reannot:
+        # Ré-applique la pré-annotation du modèle avec les seuils ACTUELS de la
+        # sidebar : permet d'ajuster les seuils par classe en cours de lot.
+        if last_res is not None and st.button("🤖 Re-pré-annoter", key=f"reannot_{canvas_key}", use_container_width=True):
+            bboxes, labels = helper.get_detection_initial_data(last_res, conf_by_id)
+            st.session_state[_data_key]    = {"bboxes": bboxes, "labels": labels}
             st.session_state[_counter_key] = clear_counter + 1
             st.rerun()
 
@@ -580,13 +639,14 @@ with tab_detection:
             st.session_state.get("last_res"),
             canvas_key="canvas_webcam",
             exit_mode_annotation=True,
+            conf_by_id=CONF_BY_ID,
         )
 
 # ─── ONGLET 2 : ANNOTATION HORS LIGNE ────────────────────────────────────────
 with tab_offline:
-    offline_queue = st.session_state.get("offline_queue", [])
+    offline_items = st.session_state.get("offline_items", [])
 
-    if not offline_queue:
+    if not offline_items:
         # ── Formulaire d'import ───────────────────────────────────────────────
         st.write("Importez une ou plusieurs images pour les annoter en série.")
         uploaded_files = st.file_uploader(
@@ -600,49 +660,83 @@ with tab_offline:
                 type="primary",
                 use_container_width=True,
             ):
-                # Décodage + redimensionnement de toutes les images.
-                # La prédiction du modèle est faite en lazy (à l'affichage)
-                # pour ne pas bloquer l'interface sur un grand lot.
-                items = []
+                # Décodage + réduction à MAX_EDIT_SIDE pour un éditeur fluide
+                # (les bytes originaux pleine résolution restent ce qui est
+                # sauvegardé dans le dataset). Prédiction en lazy à l'affichage.
+                items, ignored = [], []
                 for f in uploaded_files:
                     raw_bytes = f.getvalue()
                     nparr = np.frombuffer(raw_bytes, np.uint8)
                     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    items.append({"image": img_bgr, "name": f.name, "res": None, "raw_bytes": raw_bytes})
-                st.session_state["offline_queue"] = items
-                _reset_canvas_state("canvas_offline")
-                st.rerun()
+                    if img_bgr is None:
+                        ignored.append(f.name)
+                        continue
+                    img_bgr = helper.resize_keep_ratio(img_bgr, MAX_EDIT_SIDE, MAX_EDIT_SIDE)
+                    items.append({"image": img_bgr, "name": f.name, "res": None,
+                                  "raw_bytes": raw_bytes, "saved_name": None})
+                if ignored:
+                    st.warning("Image(s) illisible(s) ignorée(s) : " + ", ".join(ignored))
+                if items:
+                    st.session_state["offline_items"] = items
+                    st.session_state["offline_idx"] = 0
+                    _reset_canvas_state("canvas_offline")
+                    st.rerun()
     else:
-        # ── Annotation en série ───────────────────────────────────────────────
-        current = offline_queue[0]
-        total   = st.session_state.get("offline_queue_total", len(offline_queue))
-        done    = total - len(offline_queue)
+        # ── Annotation en série, avec navigation libre dans le lot ────────────
+        total  = len(offline_items)
+        idx    = min(st.session_state.get("offline_idx", 0), total - 1)
+        n_done = sum(1 for it in offline_items if it.get("saved_name"))
+        current = offline_items[idx]
 
-        # Initialiser le total au premier lancement (ne plus le changer ensuite)
-        if "offline_queue_total" not in st.session_state:
-            st.session_state["offline_queue_total"] = total
+        st.progress(n_done / total, text=f"{n_done}/{total} annotée(s) — affichée : {current['name']}")
 
-        # Barre de progression + nom du fichier courant
-        st.progress(done / total, text=f"Image {done + 1}/{total} — {current['name']}")
+        col_sel, col_prev, col_next, col_stop = st.columns([4, 1, 1, 2])
+        with col_sel:
+            pick = st.selectbox(
+                "Image du lot",
+                range(total),
+                index=idx,
+                format_func=lambda i: (
+                    f"{'✅' if offline_items[i].get('saved_name') else '⬜'} "
+                    f"{i + 1}/{total} — {offline_items[i]['name']}"
+                ),
+                label_visibility="collapsed",
+            )
+            if pick != idx:
+                _offline_goto(pick)
+        if col_prev.button("⬅", use_container_width=True, disabled=idx == 0,
+                           help="Image précédente"):
+            _offline_goto(idx - 1)
+        if col_next.button("➡", use_container_width=True, disabled=idx == total - 1,
+                           help="Image suivante"):
+            _offline_goto(idx + 1)
+        if col_stop.button("⏹ Terminer le lot", use_container_width=True):
+            st.session_state.pop("offline_items", None)
+            st.session_state.pop("offline_idx", None)
+            _reset_canvas_state("canvas_offline")
+            st.rerun()
 
-        # Prédiction lazy : exécutée une seule fois par image
-        if current["res"] is None:
+        if n_done == total:
+            st.success("🏁 Tout le lot est annoté ! Vous pouvez encore revenir corriger "
+                       "une image via le sélecteur, ou cliquer **⏹ Terminer le lot**.")
+
+        # Image déjà sauvegardée : on recharge son annotation du dataset pour la
+        # corriger (la sauvegarde écrasera proprement la même entrée, sans doublon).
+        already = current.get("saved_name")
+        initial_data = None
+        if already:
+            lbl_path = SAVE_DIR / "labels" / f"{Path(already).stem}.txt"
+            if lbl_path.exists():
+                h_cur, w_cur = current["image"].shape[:2]
+                initial_data = _parse_yolo_label(lbl_path.read_text(encoding="utf-8"), w_cur, h_cur)
+            st.caption(f"✏️ Déjà annotée (`{already}`) — sauvegarder mettra à jour l'annotation existante.")
+        elif current["res"] is None:
+            # Prédiction lazy, une seule fois par image, sous le seuil plancher :
+            # le filtrage fin par classe se fait à l'affichage (re-jouable).
             with st.spinner("Analyse par le modèle..."):
-                res = model.predict(current["image"], conf=conf_threshold)
-                current["res"] = res[0]
-                # La mutation de current (qui est offline_queue[0]) met à jour
-                # session_state directement car c'est le même objet en mémoire.
-
-        col_info, col_stop = st.columns([5, 1])
-        with col_info:
-            if len(offline_queue) > 1:
-                st.caption(f"{len(offline_queue) - 1} image(s) suivront automatiquement.")
-        with col_stop:
-            if st.button("⏹ Tout arrêter", use_container_width=True):
-                st.session_state.pop("offline_queue", None)
-                st.session_state.pop("offline_queue_total", None)
-                _reset_canvas_state("canvas_offline")
-                st.rerun()
+                current["res"] = model.predict(current["image"], conf=PRED_CONF)[0]
+                # La mutation de current met à jour session_state directement
+                # car c'est le même objet en mémoire.
 
         show_annotation_editor(
             current["image"],
@@ -650,13 +744,13 @@ with tab_offline:
             canvas_key="canvas_offline",
             exit_mode_annotation=True,
             offline_mode=True,
-            original_name=current.get("name"),
+            original_name=already or current.get("name"),
             raw_bytes=current.get("raw_bytes"),
+            initial_data=initial_data,
+            conf_by_id=CONF_BY_ID,
+            overwrite=bool(already),
+            on_saved=lambda name, item=current: item.__setitem__("saved_name", name),
         )
-
-        # Nettoyage du compteur total quand la file est épuisée après rerun
-        if not st.session_state.get("offline_queue"):
-            st.session_state.pop("offline_queue_total", None)
 
 # ─── ONGLET 3 : EXTRACTION VIDÉO ─────────────────────────────────────────────
 with tab_video:
@@ -704,8 +798,10 @@ with tab_video:
             ):
                 with st.spinner("Extraction en cours..."):
                     frames = helper.extract_frames_from_video(tmp_path, interval)
-                st.session_state["offline_queue"] = frames
-                st.session_state.pop("offline_queue_total", None)
+                for fr in frames:
+                    fr["saved_name"] = None
+                st.session_state["offline_items"] = frames
+                st.session_state["offline_idx"] = 0
                 _reset_canvas_state("canvas_offline")
                 st.toast(f"{len(frames)} images extraites — allez dans 'Annotation hors ligne'", icon="🎬")
                 st.rerun()
@@ -823,6 +919,9 @@ with tab_verify:
                 if img_bgr is None:
                     st.error(f"Impossible de décoder l'image `{v_name}`.")
                 else:
+                    # Éditeur sur version réduite (labels normalisés → coordonnées
+                    # exactes) ; le fichier original du dataset n'est pas retouché.
+                    img_bgr = helper.resize_keep_ratio(img_bgr, MAX_EDIT_SIDE, MAX_EDIT_SIDE)
                     h_img, w_img = img_bgr.shape[:2]
                     pil_img = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)).convert("RGB")
 
@@ -843,8 +942,8 @@ with tab_verify:
                         bboxes, labels_idx = [], []
                         if st.button("🤖 Pré-annoter avec le modèle", key=f"pred_btn_{v_name}"):
                             with st.spinner("Analyse par le modèle..."):
-                                res = model.predict(img_bgr, conf=conf_threshold)
-                            st.session_state[pred_key] = helper.get_detection_initial_data(res[0])
+                                res = model.predict(img_bgr, conf=PRED_CONF)
+                            st.session_state[pred_key] = helper.get_detection_initial_data(res[0], CONF_BY_ID)
                             st.rerun()
 
                     v_token = st.session_state.get("_verify_token", 0)
@@ -896,6 +995,7 @@ with tab_verify:
             if img_bgr is None:
                 st.error("Impossible de décoder l'image.")
             else:
+                img_bgr = helper.resize_keep_ratio(img_bgr, MAX_EDIT_SIDE, MAX_EDIT_SIDE)
                 h_img, w_img = img_bgr.shape[:2]
                 img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
                 pil_img = Image.fromarray(img_rgb).convert("RGB")

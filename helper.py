@@ -230,17 +230,22 @@ def class_name_to_id(class_name: str):
     return _NORM_NAME_TO_ID.get(normalize_class_name(class_name))
 
 
-def get_detection_initial_data(results):
-    """Transforme les résultats YOLO en bboxes [x, y, w, h] (coin haut-gauche) pour detection()."""
+def get_detection_initial_data(results, conf_by_id=None):
+    """Transforme les résultats YOLO en bboxes [x, y, w, h] (coin haut-gauche) pour detection().
+
+    conf_by_id : seuils de confiance par id de classe (référentiel projet).
+    Une box dont la confiance est sous le seuil de sa classe est écartée de la
+    pré-annotation. None (défaut) = tout garder (le seuil global a déjà été
+    appliqué au predict).
+    """
     bboxes, labels = [], []
     if not results:
         return bboxes, labels
     boxes = results.boxes.xywh.cpu().numpy()
     clss = results.boxes.cls.cpu().numpy()
+    confs = results.boxes.conf.cpu().numpy() if conf_by_id else None
     names = results.names
     for i, box in enumerate(boxes):
-        x_c, y_c, w, h = box
-        bboxes.append([float(x_c - w / 2), float(y_c - h / 2), float(w), float(h)])
         class_name = names[int(clss[i])]
         cid = class_name_to_id(class_name)
         if cid is None:
@@ -250,6 +255,10 @@ def get_detection_initial_data(results):
                 _warned_unknown_classes.add(class_name)
                 print(f"[helper] Classe modèle inconnue du référentiel : {class_name!r} → {list(CLASS_MAP)[0]}")
             cid = 0
+        if confs is not None and float(confs[i]) < conf_by_id.get(cid, 0.0):
+            continue
+        x_c, y_c, w, h = box
+        bboxes.append([float(x_c - w / 2), float(y_c - h / 2), float(w), float(h)])
         labels.append(cid)
     return bboxes, labels
 
