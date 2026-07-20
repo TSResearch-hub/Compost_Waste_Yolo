@@ -61,8 +61,9 @@ def _save(client, img_bytes, boxes, name="photo.jpg", overwrite=False):
 
 def test_config_expose_le_referentiel_complet(client):
     data = client.get("/api/config").json()
-    assert len(data["classes"]) == 9
+    assert len(data["classes"]) == 8
     assert "Métal" in data["classes"] and "Céramique" in data["classes"]
+    assert "Éponge" in data["classes"]
     assert set(data["colors"]) == set(data["classes"])
 
 

@@ -12,10 +12,9 @@ CLASS_COLORS = {
     "Carton":     "#795548",
     "Aluminium":  "#90A4AE",
     "Céramique":  "#FF7043",
-    "Organique":  "#43A047",
-    "Papier":     "#00ACC1",
     "Verre":      "#00897B",
     "Composite":  "#8E24AA",
+    "Éponge":     "#FDD835",
 }
 
 
@@ -206,16 +205,19 @@ def play_webcam(model, alert_placeholder, auto_capture_interval=0, conf=0.4, cam
             st.error(f"Erreur caméra : {e}")
 
 
+# Référentiel aligné sur weights/best.pt (mêmes ids, même ordre que son
+# data.yaml — seule différence : les accents, absorbés par normalize_class_name).
+# Si un futur modèle change encore d'ordre ou de classes, migrer les labels
+# existants avec migrate_labels_8_classes.py comme modèle.
 CLASS_MAP = {
     "Plastique": 0,
     "Métal":     1,
     "Carton":    2,
     "Aluminium": 3,
     "Céramique": 4,
-    "Organique": 5,
-    "Papier":    6,
-    "Verre":     7,
-    "Composite": 8,
+    "Verre":     5,
+    "Composite": 6,
+    "Éponge":    7,
 }
 
 _NORM_NAME_TO_ID = {normalize_class_name(name): cid for name, cid in CLASS_MAP.items()}

@@ -4,7 +4,7 @@ import pytest
 import dataset_tools as dt
 
 CLASSES = ["Plastique", "Métal", "Carton", "Aluminium", "Céramique",
-           "Organique", "Papier", "Verre", "Composite"]
+           "Verre", "Composite", "Éponge"]
 
 
 def _write_pair(img_dir, lbl_dir, stem, label_lines, img_bytes=None):
@@ -126,7 +126,7 @@ def test_export_split_stratifie_preserve_classe_rare(tmp_path):
     assert len(list((out["out_dir"] / "images" / "train").iterdir())) == out["n_train"]
     assert len(list((out["out_dir"] / "labels" / "val").iterdir())) == out["n_val"]
     yaml_text = out["yaml_path"].read_text(encoding="utf-8")
-    assert "nc: 9" in yaml_text
+    assert "nc: 8" in yaml_text
     assert "4: Céramique" in yaml_text  # accents préservés
 
 

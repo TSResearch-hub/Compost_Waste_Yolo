@@ -1,10 +1,10 @@
 """Tests du référentiel de classes et de la classification d'alertes.
 
 Contexte : le modèle actuel (weights/best.pt) nomme ses classes SANS accents
-(Metal, Ceramique) et n'en a que 7, alors que le référentiel du projet
-(CLASS_MAP) en a 9 avec accents. Ces tests verrouillent la tolérance aux
-accents qui a corrigé deux bugs réels (pré-annotations classées Aluminium,
-alertes du direct inversées).
+(Metal, Ceramique, Eponge) ; le référentiel du projet (CLASS_MAP) reprend ses
+8 classes dans le même ordre, mais accentuées. Ces tests verrouillent la
+tolérance aux accents qui a corrigé deux bugs réels (pré-annotations classées
+Aluminium, alertes du direct inversées).
 """
 from types import SimpleNamespace
 
@@ -14,7 +14,7 @@ import helper
 
 # Noms de classes tels que les renvoie réellement weights/best.pt
 MODEL_NAMES = {0: "Plastique", 1: "Metal", 2: "Carton", 3: "Aluminium",
-               4: "Ceramique", 5: "Verre", 6: "Composite"}
+               4: "Ceramique", 5: "Verre", 6: "Composite", 7: "Eponge"}
 
 
 class _FakeTensor:
@@ -50,11 +50,12 @@ def test_mapping_noms_modele_sans_accents():
     assert helper.class_name_to_id("Ceramique") == helper.CLASS_MAP["Céramique"]
     assert helper.class_name_to_id("Verre") == helper.CLASS_MAP["Verre"]
     assert helper.class_name_to_id("Composite") == helper.CLASS_MAP["Composite"]
+    assert helper.class_name_to_id("Eponge") == helper.CLASS_MAP["Éponge"]
 
 
 def test_mapping_toutes_les_classes_du_modele_actuel():
     attendu = {"Plastique": 0, "Metal": 1, "Carton": 2, "Aluminium": 3,
-               "Ceramique": 4, "Verre": 7, "Composite": 8}
+               "Ceramique": 4, "Verre": 5, "Composite": 6, "Eponge": 7}
     for nom, cid in attendu.items():
         assert helper.class_name_to_id(nom) == cid, nom
 
@@ -93,19 +94,19 @@ def test_plastique_est_non_compostable():
     assert non_compost == {"Plastique"}
 
 
-def test_organique_est_compostable():
-    compost, non_compost, _, _ = helper.classify_waste_type({"Organique"})
-    assert compost == {"Organique"}
-    assert non_compost == set()
+def test_classe_hors_referentiel_sans_alerte():
+    # Le modèle 8 classes ne détecte que des intrus : un nom hors des listes
+    # d'alerte ne doit rien déclencher (COMPOSTABLE est vide aujourd'hui).
+    assert helper.classify_waste_type({"Inconnu"}) == (set(), set(), set(), set())
 
 
 def test_alertes_tolerantes_aux_accents_du_modele():
     # Noms SANS accents comme les renvoie le modèle : ils ne matchaient plus
     # aucune liste avant le correctif (aucune alerte affichée)
     compost, non_compost, risk, danger = helper.classify_waste_type(
-        {"Metal", "Ceramique", "Verre", "Plastique"}
+        {"Metal", "Ceramique", "Verre", "Plastique", "Eponge"}
     )
     assert risk == {"Metal"}
     assert danger == {"Ceramique", "Verre"}
-    assert non_compost == {"Plastique"}
+    assert non_compost == {"Plastique", "Eponge"}
     assert compost == set()

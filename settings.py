@@ -15,9 +15,11 @@ DETECTION_MODEL = MODEL_DIR / 'best.pt'
 
 WEBCAM_PATH = 0
 
-COMPOSTABLE = ['Organique']
+# Le modèle actuel (8 classes) ne détecte que des intrus : aucune classe
+# compostable. La liste reste en place pour un futur modèle avec « Organique ».
+COMPOSTABLE = []
 
-NON_COMPOSTABLE = ['Plastique', 'Carton', 'Papier', 'Composite']
+NON_COMPOSTABLE = ['Plastique', 'Carton', 'Composite', 'Éponge']
 
 MATIERE_RISQUEE = ['Métal', 'Aluminium']
 

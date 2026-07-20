@@ -1043,7 +1043,7 @@ with tab_dataset:
     st.caption(
         f"**{n_exportable}** paires image + label exportables. Split stratifié : chaque image est "
         "rattachée à sa classe la plus rare pour que les classes peu représentées existent aussi "
-        "en validation. Génère `data.yaml` (les 9 classes du référentiel, accents inclus)."
+        f"en validation. Génère `data.yaml` (les {len(LABEL_LIST)} classes du référentiel, accents inclus)."
     )
     val_pct = st.slider("Part de validation (%)", 10, 40, 20, 5)
     if st.button("📦 Exporter vers exports/", type="primary", disabled=n_exportable == 0):
