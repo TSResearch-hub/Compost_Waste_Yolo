@@ -402,6 +402,7 @@ with tab_prod:
                 else:
                     hold_s = 3.0   # l'alerte reste affichée 3 s après la dernière détection
                     event_open, event_classes, last_trigger = False, set(), 0.0
+                    held_boxes = []   # dernières boîtes en alerte, tenues comme l'alerte
                     fps = None
                     try:
                         while st.session_state.prod_running:
@@ -417,7 +418,12 @@ with tab_prod:
                             # seules les détections qui atteignent le seuil DE LEUR classe
                             kept = [(n, cf, b) for n, cf, b in dets
                                     if alerting_classes([(n, cf)], thresholds)]
-                            for n, cf, (x1, y1, x2, y2) in kept:
+                            # les détections clignotent d'une frame à l'autre : on
+                            # redessine les dernières boîtes tant que l'alerte est
+                            # tenue, sinon le bandeau ALERTE s'affiche sans boîte
+                            if kept:
+                                held_boxes = kept
+                            for n, cf, (x1, y1, x2, y2) in held_boxes:
                                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                                 cv2.putText(frame, f"{n} {cf:.2f}", (x1, max(y1 - 8, 14)),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
@@ -448,7 +454,7 @@ with tab_prod:
                                         wr.writerow(row)
                                     journal_box.dataframe(st.session_state.prod_alerts)
                             elif event_open and now - last_trigger > hold_s:
-                                event_open, event_classes = False, set()
+                                event_open, event_classes, held_boxes = False, set(), []
                             if event_open:
                                 status_box.error(
                                     "ALERTE — intrus : " + ", ".join(sorted(event_classes))
