@@ -72,7 +72,8 @@ def cmd_apply(args):
     if not imgs:
         sys.exit(f"Aucune image trouvée dans {src}")
     for p in imgs:
-        Image.open(p).convert("RGB").crop((x1, y1, x2, y2)).save(dst / p.name)
+        (Image.open(p).convert("RGB").crop((x1, y1, x2, y2))
+         .save(dst / p.name, "JPEG", quality=95, subsampling=0))
     print(f"{len(imgs)} image(s) croppées ({x2 - x1}x{y2 - y1}) -> {dst}")
 
 
