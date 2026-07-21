@@ -70,6 +70,11 @@ def main():
     ap.add_argument("--test-fraction", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--runs-dir", default="runs")
+    ap.add_argument("--backup-dir", default=None,
+                    help="transmis à train.py : copie périodique du run vers ce "
+                         "dossier (sur Colab : un chemin Drive, survit aux coupures)")
+    ap.add_argument("--backup-every", type=int, default=10,
+                    help="période des backups en epochs (avec --backup-dir)")
     ap.add_argument("--skip-eval-before", action="store_true",
                     help="saute l'éval du pré-entraîné (si déjà faite sur ce split)")
     ap.add_argument("--deploy", action="store_true",
@@ -104,11 +109,13 @@ def main():
     before = latest_eval_json(args.runs_dir, "eval_pretrain")
 
     # 4. fine-tuning (repart du pré-entraîné, learning rate bas)
+    backup = (["--backup-dir", args.backup_dir, "--backup-every", str(args.backup_every)]
+              if args.backup_dir else [])
     run(["scripts/train.py", "--model", str(pretrain),
          "--data", f"{workdir}/dataset_finetune/data.yaml",
          "--epochs", str(args.epochs), "--lr0", str(args.lr0),
          "--batch", str(args.batch), "--run-prefix", "finetune",
-         "--runs-dir", args.runs_dir] + device)
+         "--runs-dir", args.runs_dir] + device + backup)
     best = latest_best(args.runs_dir, "finetune")
 
     # 5. éval APRÈS (même test)
