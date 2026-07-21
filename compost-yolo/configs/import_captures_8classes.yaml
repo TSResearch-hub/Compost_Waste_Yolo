@@ -1,0 +1,26 @@
+# Import des captures annotées avec l'interface CORRIGÉE à 8 classes
+# (fix e7243b8 du 21/07 : Organique/Papier retirés, Éponge ajoutée en dernier).
+# À utiliser pour toute annotation faite À PARTIR du 21/07 ; les annotations
+# antérieures (ancienne interface 9/10 boutons) passent par import_captures.yaml.
+# source_names = ordre EXACT des 8 boutons (= ids 0..7 dans les labels).
+format: yolo
+
+source_names:
+  - Plastique    # 0
+  - Metal        # 1
+  - Carton       # 2
+  - Aluminium    # 3
+  - Ceramique    # 4
+  - Verre        # 5
+  - Composite    # 6
+  - Eponge       # 7
+
+class_map:
+  Plastique: Plastique
+  Metal: Metal
+  Carton: Carton
+  Aluminium: Aluminium
+  Ceramique: Ceramique
+  Verre: Verre
+  Composite: Composite
+  Eponge: Eponge
