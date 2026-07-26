@@ -32,7 +32,7 @@ class_map:               # classe source -> classe de configs/data.yaml
 
 Les cas possibles dans `class_map` :
 
-| Cas | Quoi écrire |
+| Cas | Quoi ecrire |
 |---|---|
 | Classe équivalente | `plastic: Plastique` |
 | Fusionner 2 classes source | `rigid plastic: Plastique` et `soft plastic: Plastique` |
