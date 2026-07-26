@@ -43,43 +43,64 @@ python scripts/export.py --weights runs/train_xxx/weights/best.pt
 
 Chaque script affiche son aide détaillée avec `--help`.
 
-## Fine-tuning sur les captures réelles + éval « compost »
+## Boucle de réentraînement : annotations → dataset → fine-tuning (2 commandes)
 
-Stratégie recommandée : **pré-entraîner** sur les datasets externes (beaucoup
-d'images, mais autre domaine), puis **fine-tuner** sur les captures réelles (le
-domaine de déploiement). L'évaluation honnête se fait sur un jeu de captures
-**mis de côté** — jamais vu à l'entraînement. On y mesure le modèle **avant**
-(éval B) puis **après** fine-tuning (éval C), avec le *même* `evaluate.py`.
+Stratégie : **pré-entraîner** sur les datasets externes (beaucoup d'images,
+autre domaine — sur Colab, voir plus bas), puis **fine-tuner** sur les captures
+réelles. L'évaluation honnête se fait sur un jeu de captures **mis de côté**,
+jamais vu à l'entraînement, mesuré **avant** et **après** fine-tuning.
 
-Chaque étape est un script séparé :
+Prérequis (une fois) : déposer le modèle pré-entraîné dans `models/`
+(ex. `models/pretrain_yolov8n.pt`) — c'est le point de départ **canonique** de
+chaque réentraînement (jamais le fine-tuné précédent : le split peut changer
+quand le dataset grandit, seul un départ du pré-entraîné garantit que le test
+n'a jamais été appris).
 
 ```bash
-# 1. SPLIT — pool de fine-tuning + test compost held-out (stratifié par session)
-python scripts/split_captures.py --source data/raw/captures --output data/finetune
+# 1. Intégrer les dernières annotations de l'interface (../dataset_recolte par défaut).
+#    Crée un SNAPSHOT figé data/captures/vNNN_<date> (le précédent + les nouveautés) :
+#    fusion multi-postes, déduplication par CONTENU d'image (md5), labels modifiés
+#    mis à jour, session = date du nom de fichier. Les snapshots ne bougent jamais
+#    (entraînements reproductibles) ; data/captures/latest pointe le dernier.
+python scripts/update_dataset.py                         # ou --source poste1/ poste2/ ...
 
-# 2. PRÉPARER le pool de fine-tuning (split train/val PAR IMAGE, pas de test interne :
-#    le test compost, c'est data/finetune/captures_test)
-python scripts/prepare_dataset.py --source data/finetune/captures_finetune \
-    --output data/finetune/dataset_finetune --ratios 0.85 0.15 0
-
-# 3. ÉVAL B — le modèle PRÉ-ENTRAÎNÉ sur le test compost (référence avant fine-tuning)
-python scripts/evaluate.py --weights chemin/vers/pretrain_best.pt \
-    --data data/finetune/captures_test/data.yaml --split test
-
-# 4. FINE-TUNER — on repart du pré-entraîné (--model) avec un learning rate bas (--lr0)
-python scripts/train.py --model chemin/vers/pretrain_best.pt \
-    --data data/finetune/dataset_finetune/data.yaml --epochs 30 --lr0 0.001
-
-# 5. ÉVAL C — le modèle FINE-TUNÉ sur le MÊME test compost (après)
-python scripts/evaluate.py --weights runs/train_xxx/weights/best.pt \
-    --data data/finetune/captures_test/data.yaml --split test
+# 2. Réentraîner sur le dernier snapshot : split (test compost préservé) -> éval AVANT
+#    -> fine-tuning -> éval APRÈS -> comparaison. --deploy copie le best.pt vers l'interface.
+python scripts/retrain.py                                # options : --epochs, --batch 4, --deploy
 ```
 
-Compare les deux `eval_*` (B vs C) : le fine-tuning a-t-il amélioré la détection
-sur le vrai compost ? `split_captures.py` affiche les commandes 2→5 avec les bons
-chemins à la fin de son exécution. Sur GPU local, ajoute `--device 0` (et
-`--batch 4` si mémoire insuffisante) aux étapes 3-5. Le pré-entraînement (étape 0)
-se fait sur Colab (voir plus bas) ou en local avec `train.py` sur les datasets externes.
+### Interface graphique (pour non-initiés)
+
+Les mêmes actions en interface web — mise à jour du dataset, histogrammes,
+réentraînement, évaluation, résultats :
+
+```bash
+pip install -e ".[app]"          # une fois (installe streamlit)
+streamlit run finetune_app.py
+```
+
+L'app n'a aucune logique propre : chaque bouton appelle les scripts ci-dessus
+(journal affiché en direct). L'onglet **Évaluer** permet aussi de mesurer le
+modèle sur une **nouvelle session avant de l'intégrer** au dataset (mesure de
+généralisation honnête).
+
+Les runs sont nommés par rôle : `runs/pretrain_*` (datasets externes),
+`runs/finetune_*` (captures), `runs/eval_pretrain_*` / `runs/eval_finetune_*`
+(évaluations, le JSON contient le chemin exact des poids évalués).
+
+Chaque étape reste un script utilisable seul (`split_captures.py`,
+`prepare_dataset.py`, `train.py --model ... --lr0 0.001 --run-prefix finetune`,
+`evaluate.py`) : `retrain.py` ne fait que les enchaîner — voir son `--help`.
+
+### RT-DETR (alternative à YOLO)
+
+Tous les scripts acceptent indifféremment des poids YOLO ou RT-DETR (Ultralytics
+détecte l'architecture au chargement). Pour comparer : pré-entraîner avec
+`MODEL = 'rtdetr-l.pt'` dans `colab_train.ipynb` (modèle ~10× plus gros que
+yolov8n : réduire `--batch`), déposer le résultat dans
+`models/pretrain_rtdetr-l.pt`, puis `python scripts/retrain.py --pretrain
+models/pretrain_rtdetr-l.pt --batch 4`. Les deux modèles sont alors évalués sur
+le **même** test compost — comparaison directe.
 
 ## Le point critique : split PAR SESSION
 
@@ -228,11 +249,16 @@ python scripts/prepare_dataset.py --source tests/fixtures/mini_dataset --output 
 
 ```
 configs/            # classes, hyperparamètres, règles d'alerte
-data/raw/           # exports bruts de l'interface + datasets importés (gitignoré)
-data/processed/     # dataset au format Ultralytics, généré (gitignoré)
-scripts/            # import_dataset, prepare_dataset, train, evaluate, infer, export
-src/compost_detection/  # logique testée : split par session, métriques, alerte
+finetune_app.py     # interface web de réentraînement (streamlit run finetune_app.py)
+data/raw/           # imports bruts (datasets externes, ancien dataset captures) (gitignoré)
+data/captures/      # snapshots FIGÉS du dataset de captures : vNNN_<date> + latest (gitignoré)
+data/processed/     # dataset externe au format Ultralytics, généré (gitignoré)
+data/finetune/      # dossier de travail du réentraînement, généré (gitignoré)
+models/             # modèles pré-entraînés canoniques, ex. pretrain_yolov8n.pt (gitignoré)
+scripts/            # update_dataset, retrain + import_dataset, split_captures,
+                    # prepare_dataset, train, evaluate, infer, export, crop_capture
+src/compost_detection/  # logique testée : split par session, métriques, alerte, nommage
 tests/              # pytest
-notebooks/          # orchestration Colab (aucune logique métier)
-runs/               # sorties d'entraînement/évaluation (gitignoré)
+notebooks/          # orchestration Colab/local (aucune logique métier)
+runs/               # pretrain_*, finetune_*, eval_* (gitignoré)
 ```

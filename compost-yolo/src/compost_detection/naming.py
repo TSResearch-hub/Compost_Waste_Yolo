@@ -24,3 +24,16 @@ def create_run_dir(runs_dir, prefix):
         i += 1
     path.mkdir(parents=True)
     return path
+
+
+def weights_kind(weights):
+    """Sorte de modèle derrière un .pt, pour nommer les dossiers d'évaluation.
+
+    runs/finetune_08-07_10h12/weights/best.pt -> 'finetune'
+    models/pretrain_yolov8n.pt                -> 'pretrain'
+    ailleurs / non reconnu                    -> 'model'
+    """
+    p = Path(str(weights)).resolve()
+    name = p.parent.parent.name if p.parent.name == "weights" else p.stem
+    kind = name.split("_")[0].split("-")[0].lower()
+    return kind if kind in ("pretrain", "finetune", "train") else "model"
