@@ -1,17 +1,23 @@
-streamlit==1.40.0
+# TOUT le projet s'installe avec ce seul fichier, depuis la racine du dépôt :
+#     pip install -r requirements.txt
+# La ligne -e installe aussi le paquet compost_detection (src/, scripts
+# d'entraînement, interface de production) dans le même environnement.
+-e .[app]
+
+# Interface d'annotation (app.py)
+streamlit==1.59.1
 ultralytics
-opencv-python-headless
+opencv-python
 Pillow
 numpy
 matplotlib
 packaging
-pathlib
 
-# Serveur de la version mobile (mobile/server.py)
+# Serveur de la version mobile (interfaces/mobile/server.py)
 fastapi
 uvicorn[standard]
 python-multipart
 
-# Tests (tests/) : python -m pytest tests/
+# Tests (interfaces/tests/) : python -m pytest interfaces/tests/
 pytest
 httpx

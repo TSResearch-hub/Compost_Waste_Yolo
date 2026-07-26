@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "compost-detection"
+version = "0.1.0"
+description = "Entraînement et évaluation YOLO pour la détection de matériaux intrus dans le compost"
+requires-python = ">=3.10"
+dependencies = [
+    "ultralytics>=8.2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# Interfaces Streamlit (finetune_app.py) et outils annexes :
+# pip install -e ".[app]"
+app = [
+    "streamlit>=1.55",
+    "opencv-python>=4.8",
+    "matplotlib>=3.8",
+    "pillow-heif>=1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

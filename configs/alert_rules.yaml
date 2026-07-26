@@ -1,0 +1,28 @@
+# Règles d'alerte au niveau image.
+# Les classes listées ici sont considérées comme INTRUSES (une classe non
+# listée serait ignorée par la logique d'alerte). Le fond organique n'est pas
+# une classe (détecteur d'intrus uniquement) : il ne déclenche jamais d'alerte.
+# Valeur = seuil de confiance minimal pour qu'une détection déclenche une alerte.
+# Seuils provisoires, à calibrer avec : python scripts/evaluate.py --sweep-thresholds
+
+intruder_thresholds:
+  Plastique: 0.40
+  Metal: 0.40
+  Carton: 0.50
+  Aluminium: 0.40
+  Ceramique: 0.50
+  Verre: 0.40
+  Composite: 0.50
+  Eponge: 0.40
+
+# Consignes de retrait affichées à l'opérateur (onglet Production) quand la
+# classe déclenche une alerte. Texte libre, une ligne par classe.
+instructions:
+  Plastique: "Retirer le plastique (film, emballage, bouteille) ; vérifier qu'il n'en reste pas enfoui autour."
+  Metal: "Retirer l'objet métallique (boîte de conserve, couvert...) ; bac métal."
+  Carton: "Retirer les cartons volumineux ou plastifiés ; le carton brun propre déchiqueté est tolérable."
+  Aluminium: "Retirer la canette ou la feuille d'aluminium ; bac métal."
+  Ceramique: "Retirer la vaisselle ou céramique ; ramasser les éclats s'il y a de la casse."
+  Verre: "PRUDENCE, verre : retirer avec des gants, risque de coupure ; ramasser tous les éclats."
+  Composite: "DANGER, pile ou batterie : retirer immédiatement avec des gants, filière dédiée (risque chimique et incendie)."
+  Eponge: "Retirer l'éponge (synthétique, non compostable)."

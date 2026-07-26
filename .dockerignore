@@ -1,0 +1,29 @@
+# L'image ne contient QUE le code : tout ce qui est donnée, modèle ou sortie
+# reste sur la machine hôte et entre dans le conteneur par les volumes du
+# docker-compose.yml.
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.claude/
+.pytest_cache/
+*.egg-info/
+
+# Données, modèles, sorties (montés en volumes)
+data/
+dataset_recolte/
+exports/
+runs/
+weights/
+models/*.pt
+models/archive/
+
+# Assets lourds du README et divers
+images/
+video/
+docs/captures/
+interfaces/annotation/bbox_editor/frontend/node_modules/
+interfaces/annotation/bbox_editor/frontend/src/
+*.zip
+*Zone.Identifier

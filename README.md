@@ -56,11 +56,16 @@ Ce processus itératif pourra être répété plusieurs fois afin d’augmenter 
 
 ## 🔁 Boucle d'amélioration continue (outillée de bout en bout)
 
-1. **Annoter** — app PC (`streamlit run app.py`) ou mobile (`python mobile/server.py`) → tout tombe dans `dataset_recolte/`
+1. **Annoter** — app PC (`streamlit run interfaces/annotation/app.py`) ou mobile (`python interfaces/mobile/server.py`) → tout tombe dans `dataset_recolte/`
 2. **Contrôler** — onglet **📊 Dataset** : répartition des classes, anomalies (bboxes fantômes, doublons…) ; onglet **🔍 Vérification** : relecture, correction, corbeille
 3. **Exporter** — bouton d'export de l'onglet Dataset → `exports/export_.../data.yaml` (split train/val stratifié)
-4. **Réentraîner** — `python train.py --data exports/export_.../data.yaml`
-5. **Déployer** — copier le `best.pt` produit vers `weights/best.pt` : l'app PC et le mobile pré-annotent aussitôt avec le nouveau modèle
+4. **Réentraîner** — intégrer les annotations à un snapshot figé du dataset,
+   puis fine-tuner **depuis le modèle pré-entraîné canonique (v0), jamais
+   depuis le modèle déployé** : pipeline complet dans `docs/README_entrainement.md`,
+   versions des modèles (v0/v1/v2) dans `models/README.md`
+5. **Déployer** — après évaluation sur le jeu de test figé, copier les poids de
+   la version retenue vers `weights/best.pt` : les deux interfaces (annotation
+   et production) l'utilisent au prochain démarrage
 
 ## 🎥 Démo vidéo
 [![Voir la vidéo](https://img.youtube.com/vi/SuXwnxzrbc4/0.jpg)](https://www.youtube.com/watch?v=SuXwnxzrbc4)

@@ -1,0 +1,54 @@
+# Les trois interfaces du projet, chacune dans son conteneur, à partir de la
+# MÊME image (construite une seule fois).
+#
+#     docker compose up --build        # tout lancer (--build la première fois)
+#     docker compose up annotation     # une seule interface
+#     docker compose down              # tout arrêter
+#
+# Annotation : http://localhost:8501   Production : http://localhost:8502
+# Mobile     : http://<IP-du-PC>:8000  (depuis le téléphone, même WiFi)
+#
+# Les volumes montent les dossiers de données de la machine hôte dans les
+# conteneurs : tout ce qui est annoté, capturé ou entraîné SURVIT aux
+# conteneurs (on peut les jeter et les reconstruire sans rien perdre).
+
+services:
+  annotation:
+    build: .
+    image: compost-waste
+    command: streamlit run interfaces/annotation/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./dataset_recolte:/app/dataset_recolte
+      - ./exports:/app/exports
+      - ./weights:/app/weights
+
+  production:
+    image: compost-waste
+    depends_on:
+      - annotation          # garantit que l'image est construite d'abord
+    command: streamlit run interfaces/production/finetune_app.py --server.port 8502 --server.address 0.0.0.0
+    ports:
+      - "8502:8502"
+    volumes:
+      - ./configs:/app/configs
+      - ./models:/app/models
+      - ./runs:/app/runs
+      - ./data:/app/data
+      - ./weights:/app/weights
+      - ./dataset_recolte:/app/dataset_recolte
+    # Caméra : une webcam USB n'est pas visible depuis un conteneur (surtout
+    # sous Windows/Mac). Dans l'onglet Production, utiliser le mode URL avec
+    # une caméra IP (téléphone + app "IP Webcam", flux http/rtsp).
+
+  mobile:
+    image: compost-waste
+    depends_on:
+      - annotation
+    command: python interfaces/mobile/server.py
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./dataset_recolte:/app/dataset_recolte
+      - ./weights:/app/weights

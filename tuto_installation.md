@@ -2,12 +2,18 @@
 
 Ce guide explique comment configurer votre machine locale pour lancer l'interface d'annotation du projet **Compost Waste Yolo**. 
 
+> **Voie rapide — Docker** : si Docker est installé, une seule commande lance
+> les trois interfaces sans rien installer d'autre : `docker compose up --build`
+> — voir [docs/README_docker.md](docs/README_docker.md). Le reste de ce guide
+> décrit l'installation classique (Python + venv), nécessaire notamment pour
+> utiliser une webcam USB.
+
 Suivez les étapes ci-dessous selon votre système d'exploitation (Windows ou Linux).
 
 ---
 
 ## 0. Prérequis : Installer Python et Pip
-Avant de commencer, vous devez avoir Python **(version 3.8 ou supérieure)** installé sur votre machine. `pip` (le gestionnaire de paquets) est généralement inclus avec l'installation de Python.
+Avant de commencer, vous devez avoir Python **(version 3.10 ou supérieure)** installé sur votre machine. `pip` (le gestionnaire de paquets) est généralement inclus avec l'installation de Python.
 
 ### Sous windows
 1. Téléchargez l'installateur officiel sur python.org.
@@ -86,14 +92,26 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Cette commande installe **tout le projet** dans le même environnement :
+l'interface d'annotation, mais aussi le paquet `compost_detection` (entraînement,
+évaluation, interface de production). Un seul environnement virtuel suffit
+pour l'ensemble du dépôt.
+
 ## 4. Lancer l'application
 Une fois l'installation terminée, il ne vous reste plus qu'à lancer l'interface Streamlit avec la commande suivante :
 
 ```bash
-streamlit run app.py
+streamlit run interfaces/annotation/app.py
 ```
 
 L'application va se lancer et une page web devrait s'ouvrir automatiquement dans votre navigateur par défaut. Si ce n'est pas le cas, vous pouvez y accéder manuellement en allant à l'adresse suivante : http://localhost:8501
+
+L'interface d'entraînement / production (fine-tuning, surveillance caméra avec
+alertes) se lance depuis le même environnement :
+
+```bash
+streamlit run interfaces/production/finetune_app.py
+```
 
 ## 5. (Optionnel) Version mobile — annoter depuis un téléphone / une tablette
 
@@ -101,8 +119,8 @@ Une seconde interface, tactile, permet d'annoter depuis un smartphone connecté
 au même réseau WiFi que le PC (le modèle YOLO reste sur le PC) :
 
 ```bash
-python mobile/server.py
+python interfaces/mobile/server.py
 ```
 
 Le terminal affiche l'adresse à ouvrir sur le téléphone
-(ex. `http://192.168.1.20:8000`). Voir `mobile/README.md` pour les détails.
+(ex. `http://192.168.1.20:8000`). Voir `interfaces/mobile/README.md` pour les détails.
