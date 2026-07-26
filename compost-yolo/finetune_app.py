@@ -354,23 +354,32 @@ with tab_prod:
             st.session_state.setdefault("prod_running", False)
             st.session_state.setdefault("prod_alerts", [])
             st.session_state.setdefault("prod_dir", None)
+            st.session_state.setdefault("last_raw", None)    # dernière frame sans boîtes
+            st.session_state.setdefault("last_shown", None)  # la même, avec boîtes
             cam = st.text_input(
                 "Caméra : indice (0, 1...) ou URL de flux (http/rtsp)", value="0",
                 help="Sous WSL la webcam USB n'est en général pas visible : lancer l'app "
                      "depuis Windows, ou utiliser un téléphone en caméra IP et coller son URL.")
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             if c1.button("Démarrer la surveillance", type="primary"):
                 st.session_state.prod_running = True
                 st.session_state.prod_alerts = []     # nouvelle session = nouveau journal
                 st.session_state.prod_dir = None
             if c2.button("Arrêter la surveillance"):
                 st.session_state.prod_running = False
+            manual_clicked = c3.button(
+                "Capture manuelle (à annoter)",
+                help="Enregistre l'image affichée même sans alerte — pour un intrus que "
+                     "le modèle a raté. L'image brute part dans a_annoter/, la "
+                     "surveillance reprend toute seule.")
 
             status_box = st.empty()
             frame_box = st.empty()
             info_box = st.empty()
-            st.markdown("**Journal des alertes de la session** — une ligne par événement, "
-                        "frame sauvegardée dans `runs/production_*/frames/`")
+            st.markdown("**Journal de la session** — une ligne par capture : alerte, capture "
+                        "manuelle, ou image saine prise à chaque fin d'alerte. Brutes pour "
+                        "l'annotation : `runs/production_*/a_annoter/` — avec boîtes, pour "
+                        "vérifier : `frames/`")
             journal_box = st.empty()
             if st.session_state.prod_alerts:
                 journal_box.dataframe(st.session_state.prod_alerts)
@@ -384,10 +393,53 @@ with tab_prod:
                     if acsv.exists():
                         with open(acsv, encoding="utf-8") as f:
                             st.dataframe(list(csv.DictReader(f)))
+                        n_ann = len(list((sel / "a_annoter").glob("*.jpg")))
+                        if n_ann:
+                            st.caption(f"{n_ann} image(s) brute(s) à annoter dans "
+                                       f"`{sel.name}/a_annoter/` — à donner comme source "
+                                       "à l'interface d'annotation.")
                         for fr in sorted((sel / "frames").glob("*.jpg"))[:6]:
                             st.image(str(fr), caption=fr.name, width=320)
                     else:
                         st.caption("Aucune alerte enregistrée dans cette session.")
+
+            def prod_save(kind, raw, shown=None, classes="", conf=None):
+                """Toute capture passe ici : image brute dans a_annoter/ (à importer
+                dans l'interface d'annotation), copie avec boîtes dans frames/ (pour
+                vérifier à l'œil), ligne dans alerts.csv (le manifeste de la session)."""
+                import cv2
+                if st.session_state.prod_dir is None:
+                    st.session_state.prod_dir = str(create_run_dir(ROOT / "runs",
+                                                                   "production"))
+                d = Path(st.session_state.prod_dir)
+                (d / "frames").mkdir(exist_ok=True)
+                (d / "a_annoter").mkdir(exist_ok=True)
+                name = f"{datetime.now():%Hh%M-%Ss}_{kind}.jpg"
+                cv2.imwrite(str(d / "a_annoter" / name), raw)
+                if shown is not None:
+                    cv2.imwrite(str(d / "frames" / name), shown)
+                row = {"horodatage": f"{datetime.now():%d/%m %H:%M:%S}", "type": kind,
+                       "classes": classes,
+                       "confiance max": round(conf, 2) if conf is not None else "",
+                       "frame": name}
+                st.session_state.prod_alerts.append(row)
+                new_csv = not (d / "alerts.csv").exists()
+                with open(d / "alerts.csv", "a", newline="", encoding="utf-8") as f:
+                    wr = csv.DictWriter(f, fieldnames=row.keys())
+                    if new_csv:
+                        wr.writeheader()
+                    wr.writerow(row)
+                journal_box.dataframe(st.session_state.prod_alerts)
+
+            if manual_clicked:
+                if st.session_state.last_raw is None:
+                    st.warning("Aucune image reçue de la caméra — démarrer la "
+                               "surveillance d'abord.")
+                else:
+                    prod_save("manuelle", st.session_state.last_raw,
+                              st.session_state.last_shown)
+                    st.toast("Capture enregistrée dans a_annoter/ — "
+                             "la surveillance reprend.")
 
             if st.session_state.prod_running:
                 import cv2  # import local : seulement pour la surveillance
@@ -411,6 +463,7 @@ with tab_prod:
                                 status_box.error("Flux caméra interrompu.")
                                 break
                             t0 = time.time()
+                            raw = frame.copy()   # version sans boîtes, pour l'annotation
                             res = model.predict(frame, conf=min_conf, verbose=False)[0]
                             dets = [(res.names[int(c)], float(cf), [int(v) for v in box])
                                     for c, cf, box in zip(res.boxes.cls, res.boxes.conf,
@@ -427,34 +480,24 @@ with tab_prod:
                                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                                 cv2.putText(frame, f"{n} {cf:.2f}", (x1, max(y1 - 8, 14)),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            # mémorisées pour la capture manuelle : le clic interrompt
+                            # la boucle, on sauvegarde alors la dernière image affichée
+                            st.session_state.last_raw = raw
+                            st.session_state.last_shown = frame
                             now = time.time()
                             if kept:
                                 last_trigger = now
                                 event_classes |= {n for n, _, _ in kept}
                                 if not event_open:  # début d'événement -> journal + snapshot
                                     event_open = True
-                                    if st.session_state.prod_dir is None:
-                                        d = create_run_dir(ROOT / "runs", "production")
-                                        (d / "frames").mkdir()
-                                        st.session_state.prod_dir = str(d)
-                                    d = Path(st.session_state.prod_dir)
-                                    snap = d / "frames" / f"{datetime.now():%Hh%M-%Ss}.jpg"
-                                    cv2.imwrite(str(snap), frame)
-                                    row = {"horodatage": f"{datetime.now():%d/%m %H:%M:%S}",
-                                           "classes": ", ".join(sorted({n for n, _, _ in kept})),
-                                           "confiance max": round(max(cf for _, cf, _ in kept), 2),
-                                           "frame": snap.name}
-                                    st.session_state.prod_alerts.append(row)
-                                    new_csv = not (d / "alerts.csv").exists()
-                                    with open(d / "alerts.csv", "a", newline="",
-                                              encoding="utf-8") as f:
-                                        wr = csv.DictWriter(f, fieldnames=row.keys())
-                                        if new_csv:
-                                            wr.writeheader()
-                                        wr.writerow(row)
-                                    journal_box.dataframe(st.session_state.prod_alerts)
+                                    prod_save("alerte", raw, frame,
+                                              classes=", ".join(sorted({n for n, _, _ in kept})),
+                                              conf=max(cf for _, cf, _ in kept))
                             elif event_open and now - last_trigger > hold_s:
                                 event_open, event_classes, held_boxes = False, set(), []
+                                # fin d'alerte = scène saine depuis 3 s : on garde UNE
+                                # image négative appariée (même scène sans l'intrus)
+                                prod_save("saine", raw)
                             if event_open:
                                 status_box.error(
                                     "ALERTE — intrus : " + ", ".join(sorted(event_classes))
