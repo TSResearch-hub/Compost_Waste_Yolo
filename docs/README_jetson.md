@@ -62,7 +62,36 @@ Puis ouvrir :
 - depuis un autre appareil du réseau : http://«IP-de-la-Jetson»:8502
   (obtenir l'IP avec `hostname -I`)
 
-## 5. Utiliser
+## 5. LED d'alerte et bouton de capture (optionnel)
+
+Sur le connecteur 40 broches de la Jetson (numéros = position physique de la
+broche, la broche 1 est marquée sur la carte) :
+
+| Élément | Câblage |
+|---------|---------|
+| LED     | broche **12** → résistance 220-330 Ω → LED (patte longue) → GND (broche 14) |
+| Bouton  | broche **18** → bouton poussoir → 3,3 V (broche 17) |
+
+- La **LED s'allume tant qu'une alerte est en cours** et s'éteint quand la
+  scène redevient saine.
+- Le **bouton déclenche une capture manuelle** : même effet que le bouton
+  « Capture manuelle » de l'interface — à utiliser quand l'employé voit un
+  intrus que le modèle ne signale pas. L'image brute part dans `a_annoter/`.
+
+Les broches se changent dans `configs/hardware.yaml` (commentaires de câblage
+inclus). Il faut la bibliothèque GPIO (souvent déjà présente avec JetPack) :
+
+```bash
+python -c "import Jetson.GPIO"        # si erreur :
+pip install Jetson.GPIO
+sudo usermod -aG gpio $USER           # puis rouvrir la session
+```
+
+Sans GPIO (PC, WSL, Docker), l'interface fonctionne normalement — LED et
+bouton sont simplement ignorés. Quand ils sont actifs, la ligne d'état sous
+la vidéo affiche « LED + bouton GPIO actifs ».
+
+## 6. Utiliser
 
 Dans l'onglet **Production** :
 

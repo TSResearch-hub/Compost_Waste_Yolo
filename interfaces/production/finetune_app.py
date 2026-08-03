@@ -1,7 +1,8 @@
 """Interface de fine-tuning — pour réentraîner le modèle sans ligne de commande.
 
 Habillage Streamlit des scripts du repo (aucune logique métier ici) :
-onglet Production -> boucle caméra + infer.py (alertes de alert_rules.yaml),
+onglet Production -> boucle caméra + infer.py (alertes de alert_rules.yaml ;
+sur Jetson : LED d'alerte + bouton de capture, configs/hardware.yaml),
 onglet Dataset -> update_dataset.py, onglet Réentraîner -> retrain.py,
 onglet Évaluer -> evaluate.py, onglet Résultats -> lecture de runs/.
 
@@ -29,6 +30,7 @@ import streamlit as st
 import yaml
 
 from compost_detection.alert import alerting_classes, load_alert_config
+from compost_detection.hardware import HardwareIO
 from compost_detection.naming import create_run_dir
 
 # Le code de l'interface vit dans interfaces/production/ ; tout ce qu'elle
@@ -485,6 +487,10 @@ with tab_prod:
                     status_box.error(f"Caméra « {cam} » inaccessible — vérifier l'indice ou "
                                      "l'URL (sous WSL, voir l'aide du champ ci-dessus).")
                 else:
+                    # LED d'alerte + bouton de capture (Jetson) ; sans GPIO
+                    # (PC, WSL, Docker), tout est no-op et rien ne change
+                    hw = HardwareIO.from_config(ROOT / "configs/hardware.yaml")
+                    gpio_note = (" — LED + bouton GPIO actifs" if hw.enabled else "")
                     hold_s = 3.0   # l'alerte reste affichée 3 s après la dernière détection
                     event_open, event_classes, last_trigger = False, set(), 0.0
                     held_boxes = []   # dernières boîtes en alerte, tenues comme l'alerte
@@ -517,6 +523,11 @@ with tab_prod:
                             # la boucle, on sauvegarde alors la dernière image affichée
                             st.session_state.last_raw = raw
                             st.session_state.last_shown = frame
+                            # bouton physique = même geste que « Capture manuelle » :
+                            # l'employé voit un intrus que le modèle rate
+                            if hw.button_pressed():
+                                prod_save("manuelle", raw, frame)
+                                st.toast("Capture (bouton) enregistrée dans a_annoter/.")
                             now = time.time()
                             if kept:
                                 last_trigger = now
@@ -531,6 +542,7 @@ with tab_prod:
                                 # fin d'alerte = scène saine depuis 3 s : on garde UNE
                                 # image négative appariée (même scène sans l'intrus)
                                 prod_save("saine", raw)
+                            hw.set_alert(event_open)  # LED allumée tant que l'alerte est tenue
                             if event_open:
                                 status_box.error(
                                     "ALERTE — intrus : " + ", ".join(sorted(event_classes))
@@ -546,9 +558,11 @@ with tab_prod:
                             frame_box.image(frame, channels="BGR", width="stretch")
                             dt = time.time() - t0
                             fps = (1 / dt) if fps is None else 0.9 * fps + 0.1 / dt
-                            info_box.caption(f"{fps:.1f} images/s — modèle : {w.name}")
+                            info_box.caption(f"{fps:.1f} images/s — modèle : {w.name}"
+                                             + gpio_note)
                     finally:
                         cap.release()
+                        hw.close()  # LED éteinte, broches rendues
 
         # -------------------------------------------------------- fichier ponctuel
         else:

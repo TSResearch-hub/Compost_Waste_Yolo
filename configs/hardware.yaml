@@ -1,0 +1,14 @@
+# LED d'alerte et bouton de capture — connecteur 40 broches de la Jetson.
+# Numérotation BOARD : le numéro PHYSIQUE de la broche sur le connecteur
+# (broche 1 = coin du connecteur, marqué sur la carte).
+#
+# Câblage :
+#   LED    : broche 12 -> résistance 220-330 ohms -> LED (patte longue) -> GND (broche 14)
+#   Bouton : broche 18 -> bouton poussoir -> 3,3 V (broche 17)  [appuyé = niveau haut]
+#
+# Si le bouton déclenche tout seul (broche « flottante » au repos), ajouter une
+# résistance de rappel de 10 kohms entre la broche 18 et GND, ou changer de broche :
+# les résistances de rappel internes de la Jetson ne sont pas réglables en logiciel.
+
+led_pin: 12
+button_pin: 18
