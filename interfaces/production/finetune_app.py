@@ -8,6 +8,9 @@ onglet Évaluer -> evaluate.py, onglet Résultats -> lecture de runs/.
 Lancement (depuis la racine du dépôt) :
     source venv/bin/activate
     streamlit run interfaces/production/finetune_app.py
+
+Sur la Jetson (interface servie sur le réseau local, voir docs/README_jetson.md) :
+    streamlit run interfaces/production/finetune_app.py --server.address 0.0.0.0 --server.port 8502
 """
 
 import csv
@@ -146,9 +149,14 @@ def show_eval(run_dir):
 
 @st.cache_resource(show_spinner="Chargement du modèle...")
 def load_model(weights_path):
-    """Charge un .pt une seule fois par session (l'import ultralytics est lourd,
-    on ne le paie qu'au premier usage de l'onglet Production)."""
+    """Charge un modèle une seule fois par session (l'import ultralytics est
+    lourd, on ne le paie qu'au premier usage de l'onglet Production)."""
     from ultralytics import YOLO
+    # .engine = TensorRT (Jetson) : le fichier ne porte pas la tâche, il faut
+    # la préciser au chargement ; l'architecture (YOLO / RT-DETR) est figée
+    # dans le moteur, la classe YOLO sert de chargeur pour les deux
+    if str(weights_path).endswith(".engine"):
+        return YOLO(weights_path, task="detect")
     return YOLO(weights_path)
 
 
@@ -327,19 +335,29 @@ with tab_prod:
     thresholds, instructions = load_alert_config(ROOT / "configs/alert_rules.yaml")
 
     deployed = ROOT / "weights" / "best.pt"
-    prod_weights = [deployed] if deployed.exists() else []
+    # .engine en premier : c'est l'export TensorRT local (scripts/export.py
+    # --formats engine, à lancer SUR la Jetson) — beaucoup plus rapide que le
+    # .pt sur cette machine, mais valable uniquement là où il a été exporté
+    prod_weights = sorted((ROOT / "weights").glob("*.engine"))
+    prod_weights += [deployed] if deployed.exists() else []
     prod_weights += sorted((ROOT / "models").glob("*.pt"))
     prod_weights += sorted((ROOT / "runs").glob("*_*/weights/best.pt"),
                            key=lambda p: p.stat().st_mtime, reverse=True)
+
+    def prod_label(p):
+        if p.parent == ROOT / "weights":
+            return (f"déployé (TensorRT) — weights/{p.name}" if p.suffix == ".engine"
+                    else "déployé — weights/best.pt")
+        if p.parent.name == "weights":
+            return p.parent.parent.name + "/best.pt"
+        return f"models/{p.name}"
+
     if not prod_weights:
         st.error("Aucun modèle disponible — déployer un best.pt (onglet Réentraîner, "
                  "case « Déployer ») ou déposer un .pt dans `models/`.")
     else:
-        w = st.selectbox(
-            "Modèle", prod_weights, key="prod_weights",
-            format_func=lambda p: "déployé — weights/best.pt" if p == deployed
-            else (p.parent.parent.name + "/best.pt" if p.parent.name == "weights"
-                  else f"models/{p.name}"))
+        w = st.selectbox("Modèle", prod_weights, key="prod_weights",
+                         format_func=prod_label)
         mode = st.radio("Source", ["Caméra en direct", "Tester un fichier (image ou vidéo)"],
                         horizontal=True)
         # réglage à la volée pour les deux modes ; le yaml reste la référence
@@ -362,8 +380,9 @@ with tab_prod:
             st.session_state.setdefault("last_shown", None)  # la même, avec boîtes
             cam = st.text_input(
                 "Caméra : indice (0, 1...) ou URL de flux (http/rtsp)", value="0",
-                help="Sous WSL la webcam USB n'est en général pas visible : lancer l'app "
-                     "depuis Windows, ou utiliser un téléphone en caméra IP et coller son URL.")
+                help="Jetson / Linux : la caméra USB est l'indice 0. Sous WSL la webcam "
+                     "n'est en général pas visible : lancer l'app depuis Windows, ou "
+                     "utiliser un téléphone en caméra IP et coller son URL.")
             c1, c2, c3 = st.columns(3)
             if c1.button("Démarrer la surveillance", type="primary"):
                 st.session_state.prod_running = True
@@ -450,7 +469,17 @@ with tab_prod:
 
                 model = load_model(str(w))
                 src = int(cam.strip()) if cam.strip().isdigit() else cam.strip()
-                cap = cv2.VideoCapture(src)
+                if isinstance(src, int) and sys.platform.startswith("linux"):
+                    # caméra USB sous Linux (Jetson) : backend V4L2 + flux MJPEG —
+                    # sans ça la caméra sert du YUYV brut plafonné à ~5 img/s
+                    cap = cv2.VideoCapture(src, cv2.CAP_V4L2)
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                    if not cap.isOpened():  # caméra non V4L2 : backend par défaut
+                        cap = cv2.VideoCapture(src)
+                else:
+                    cap = cv2.VideoCapture(src)
                 if not cap.isOpened():
                     st.session_state.prod_running = False
                     status_box.error(f"Caméra « {cam} » inaccessible — vérifier l'indice ou "
