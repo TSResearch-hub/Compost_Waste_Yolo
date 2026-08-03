@@ -1,0 +1,25 @@
+# PostgreSQL de déploiement.
+# La machine de dev (WSL2 sans droits admin) n'a pas Docker : en dev, utiliser
+# une instance hébergée (Neon/Supabase) ou le PostgreSQL embarqué des tests.
+# Aucun identifiant en dur : tout vient de l'environnement (.env non commité,
+# voir .env.example) — la syntaxe ${VAR:?} rend la variable obligatoire.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?à définir dans .env}
+      POSTGRES_USER: ${POSTGRES_USER:?à définir dans .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?à définir dans .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

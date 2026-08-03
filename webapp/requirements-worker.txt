@@ -1,0 +1,5 @@
+# Dépendances du worker de pré-annotation SEUL — venv séparé (.venv-worker),
+# jamais dans le venv du serveur web : torch est lourd et le worker a vocation
+# à déménager sur une machine GPU. Voir README, section worker.
+-r requirements.txt
+ultralytics>=8.3

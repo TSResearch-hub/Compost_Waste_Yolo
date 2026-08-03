@@ -1,0 +1,12 @@
+# Secrets locaux — la chaîne de connexion ne doit JAMAIS entrer dans le dépôt
+.env
+
+# Venv dédié à webapp (isolé de l'outil Streamlit existant)
+.venv/
+# Venv du worker de pré-annotation (torch/ultralytics, voir README)
+.venv-worker/
+# Binaires PostgreSQL portables pour les tests (voir README)
+.pg16/
+
+__pycache__/
+.pytest_cache/

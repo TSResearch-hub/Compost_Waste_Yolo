@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(wsl -d Ubuntu -u reda -- bash -c 'cd /home/reda/Documents/Compost_Waste_Yolo && git status --short && echo \"---BRANCHES---\" && git branch -a -v && echo \"---LOG BRANCH---\" && git log --oneline -8 changement-classes 2>/dev/null || echo \"branche introuvable\"')"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+# Outils de dev/test uniquement.
+pytest>=8
+httpx>=0.27
+# Les tests exigent un PostgreSQL réel (la concurrence ne se valide pas sur
+# autre chose). Ordre de résolution du conftest : TEST_DATABASE_URL, sinon
+# binaires portables dans webapp/.pg16 (recette dans le README — pgserver
+# n'existe pas pour Python 3.14).

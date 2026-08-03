@@ -1,0 +1,9 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+SQLAlchemy>=2.0.41
+alembic>=1.16
+psycopg[binary]>=3.2.10
+pydantic-settings>=2.6
+PyYAML>=6.0.2
+argon2-cffi>=23.1
+Pillow>=10.4
