@@ -1,0 +1,31 @@
+# PROPOSITION de seuils pour la démo avec le modèle v2 (03/08) — NE REMPLACE PAS
+# alert_rules.yaml. Critère : rappel max sur Metal/Verre/Ceramique (+ Plastique),
+# le client tolère les fausses alertes. Calibré sur captures_test :
+#   Metal 0.45     -> rappel image 0.93 (v2 confiant sur le métal, seuil haut = moins de bruit)
+#   Verre 0.20     -> 5/6 boîtes (3/6 à 0.40 : v2 voit le verre mais avec une confiance basse)
+#   Ceramique 0.15 -> 3/4 boîtes (2/4 au-dessus de 0.20)
+#   Plastique 0.35 -> ~0.80 rappel boîte
+# À valider : python scripts/evaluate.py --weights models/v2_finetune_rtdetr-l_snapshot-v003.pt \
+#   --data data/finetune/captures_test/data.yaml --split test --conf 0.10 \
+#   --alert-rules configs/alert_rules_v2_demo.yaml
+# puis à reporter dans les sliders de l'onglet Production lors de la répétition.
+
+intruder_thresholds:
+  Plastique: 0.35
+  Metal: 0.45
+  Carton: 0.50
+  Aluminium: 0.25
+  Ceramique: 0.15
+  Verre: 0.20
+  Composite: 0.50
+  Eponge: 0.40
+
+instructions:
+  Plastique: "Retirer le plastique (film, emballage, bouteille) ; vérifier qu'il n'en reste pas enfoui autour."
+  Metal: "Retirer l'objet métallique (boîte de conserve, couvert...) ; bac métal."
+  Carton: "Retirer les cartons volumineux ou plastifiés ; le carton brun propre déchiqueté est tolérable."
+  Aluminium: "Retirer la canette ou la feuille d'aluminium ; bac métal."
+  Ceramique: "Retirer la vaisselle ou céramique ; ramasser les éclats s'il y a de la casse."
+  Verre: "PRUDENCE, verre : retirer avec des gants, risque de coupure ; ramasser tous les éclats."
+  Composite: "DANGER, pile ou batterie : retirer immédiatement avec des gants, filière dédiée (risque chimique et incendie)."
+  Eponge: "Retirer l'éponge (synthétique, non compostable)."
