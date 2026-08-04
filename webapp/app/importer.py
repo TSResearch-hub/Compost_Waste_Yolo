@@ -124,18 +124,23 @@ def import_session_folder(
     source_dirs: list[Path | str] | tuple,
     admin_id: int,
     name: str,
-    captured_on: date,
+    captured_on: date | None = None,
     lighting: str | None = None,
     camera_height_cm: int | None = None,
     compost_state: str | None = None,
     operator: str | None = None,
     notes: str | None = None,
+    attach_existing: bool = False,
 ) -> ImportReport:
     """Un import = UNE session, éventuellement plusieurs dossiers sources (un
     par poste de capture) : trois postes qui photographient le même tas au
     même moment doivent entrer comme une seule session, sinon le split par
     session peut mettre le poste A en entraînement et le poste B en test —
-    la fuite de données qu'il doit justement empêcher."""
+    la fuite de données qu'il doit justement empêcher.
+
+    `attach_existing=True` rattache les images à la session `name` déjà en
+    base (cas nominal d'un poste importé après coup) : les paramètres de
+    session sont alors refusés — la session existante n'est pas modifiée."""
     report = ImportReport(session_name=name)
     sources = [Path(s) for s in source_dirs]
     if not sources:
@@ -143,9 +148,24 @@ def import_session_folder(
     for source in sources:
         if not source.is_dir():
             raise ValueError(f"dossier source introuvable : {source}")
-    # Refus AVANT toute écriture si le nom de session est pris
-    if db.scalar(select(CaptureSession.id).where(CaptureSession.name == name)):
-        raise ValueError(f"une session « {name} » existe déjà")
+    existante = db.scalar(
+        select(CaptureSession).where(CaptureSession.name == name))
+    if attach_existing:
+        if existante is None:
+            raise ValueError(f"session « {name} » introuvable — pour la "
+                             "créer, ne pas demander de rattachement")
+        if any(v is not None for v in (captured_on, lighting, camera_height_cm,
+                                       compost_state, operator, notes)):
+            raise ValueError(
+                "rattachement : les paramètres de session ne s'appliquent "
+                "pas, la session existante n'est pas modifiée")
+    else:
+        # Refus AVANT toute écriture si le nom de session est pris
+        if existante is not None:
+            raise ValueError(f"une session « {name} » existe déjà — pour y "
+                             "ajouter un poste, demander le rattachement")
+        if captured_on is None:
+            raise ValueError("date de capture requise pour créer une session")
 
     # ── Analyse des dossiers, en lecture seule ───────────────────────────────
     candidates: list[tuple[Path, str, int, int, str]] = []  # + label du poste
@@ -204,19 +224,30 @@ def import_session_folder(
     # ── Écritures : base + copies, tout ou rien ──────────────────────────────
     copied: list[str] = []
     try:
-        session = CaptureSession(
-            name=name, captured_on=captured_on, lighting=lighting,
-            camera_height_cm=camera_height_cm, compost_state=compost_state,
-            operator=operator, notes=notes, created_by=admin_id,
-        )
-        db.add(session)
-        db.flush()
-        batch = Batch(session_id=session.id, name=DEFAULT_BATCH_NAME,
-                      created_by=admin_id)
-        db.add(batch)
-        db.flush()
+        if attach_existing:
+            session = existante
+            batch = db.scalar(select(Batch).where(
+                Batch.session_id == session.id,
+                Batch.name == DEFAULT_BATCH_NAME))
+        else:
+            session = CaptureSession(
+                name=name, captured_on=captured_on, lighting=lighting,
+                camera_height_cm=camera_height_cm, compost_state=compost_state,
+                operator=operator, notes=notes, created_by=admin_id,
+            )
+            db.add(session)
+            db.flush()
+            batch = None
+        if batch is None:
+            batch = Batch(session_id=session.id, name=DEFAULT_BATCH_NAME,
+                          created_by=admin_id)
+            db.add(batch)
+            db.flush()
 
-        taken: set[str] = set()
+        # Noms d'export déjà pris dans la session cible (lignes actives) :
+        # l'unicité (session_id, export_filename) doit survivre au rattachement
+        taken: set[str] = set(db.scalars(select(Image.export_filename).where(
+            Image.session_id == session.id, Image.superseded_at.is_(None))))
         for path, sha, width, height, label in candidates:
             rel = f"sessions/{session.id}/originals/{sha}{path.suffix.lower()}"
             export_name = _unique_export_name(path.name, label, taken)

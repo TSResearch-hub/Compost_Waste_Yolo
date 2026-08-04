@@ -44,9 +44,10 @@ def test_assignation_et_verrou_api(make_client, ctx):
                    json={"user_id": ctx["bob"].id})
     assert r.status_code == 409
     assert "alice" in r.json()["detail"]
-    # visible dans la liste
+    # visible dans la liste, avec la date de prise du verrou
     lots = login(make_client(), "alice").get("/api/batches").json()
     assert lots[0]["holder"] == "alice" and lots[0]["session_name"] == "s1"
+    assert lots[0]["holder_since"] is not None
     # libération admin (force) puis réassignation possible
     r = admin.post(f"/api/batches/{ctx['b1']}/release", json={})
     assert r.status_code == 200 and r.json()["reason"] == "force_admin"
@@ -117,6 +118,48 @@ def test_liberation_remet_les_en_cours_a_annoter(make_client, ctx, engine):
                     "SELECT count(*) FROM image_status_events"
                     " WHERE from_status = 'en_cours' AND to_status = 'a_annoter'"
                     " AND changed_by = %s", (ctx["alice"].id,)) == 2
+
+
+def test_liberation_rend_chaque_image_a_son_origine(make_client, ctx, engine):
+    """La libération rend chaque image « en cours » à son statut d'ORIGINE,
+    lu dans le journal (même règle que /images/{id}/fermer) : une image
+    annotée rouverte reste annotée — la rétrograder la sortirait de l'export,
+    donc de l'entraînement, sans aucun signal — et une image jamais annotée
+    revient à annoter."""
+    ids = {"s1": ctx["s1"], "b1": ctx["b1"]}
+    rouverte = insert_image(engine, ids, "d" * 64, "p/d.jpg")
+    vierge = insert_image(engine, ids, "f" * 64, "p/f.jpg")
+    admin = login(make_client(), "root")
+    admin.post("/api/images/passer-a-annoter",
+               json={"image_ids": [rouverte, vierge]})
+    admin.post(f"/api/batches/{ctx['b1']}/assign",
+               json={"user_id": ctx["alice"].id})
+
+    # alice annote la première (négatif) puis la ROUVRE ; elle ouvre la
+    # seconde sans jamais l'enregistrer
+    alice = login(make_client(), "alice")
+    alice.post(f"/api/images/{rouverte}/ouvrir")
+    assert alice.put(f"/api/images/{rouverte}/annotations",
+                     json={"boites": []}).status_code == 200
+    alice.post(f"/api/images/{rouverte}/ouvrir")
+    alice.post(f"/api/images/{vierge}/ouvrir")
+
+    r = alice.post(f"/api/batches/{ctx['b1']}/release", json={})
+    assert r.status_code == 200 and r.json()["reverted_images"] == 2
+    assert exec_sql(engine, "SELECT status FROM images WHERE id = %s",
+                    (rouverte,)) == "annotee"
+    assert exec_sql(engine, "SELECT status FROM images WHERE id = %s",
+                    (vierge,)) == "a_annoter"
+    # restitutions tracées avec alice comme auteur (2 en_cours → annotee :
+    # l'enregistrement, puis la restitution à la libération)
+    assert exec_sql(engine, "SELECT count(*) FROM image_status_events"
+                    " WHERE image_id = %s AND from_status = 'en_cours'"
+                    " AND to_status = 'annotee' AND changed_by = %s",
+                    (rouverte, ctx["alice"].id)) == 2
+    assert exec_sql(engine, "SELECT count(*) FROM image_status_events"
+                    " WHERE image_id = %s AND from_status = 'en_cours'"
+                    " AND to_status = 'a_annoter' AND changed_by = %s",
+                    (vierge, ctx["alice"].id)) == 1
 
 
 def test_verrou_sous_assignations_concurrentes(engine, ctx):

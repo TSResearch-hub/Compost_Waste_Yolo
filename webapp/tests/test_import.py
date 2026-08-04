@@ -164,6 +164,45 @@ def test_nom_de_session_deja_pris(db, engine, tmp_path, admin_id):
     assert exec_sql(engine, "SELECT count(*) FROM sessions") == 1
 
 
+def test_rattachement_a_une_session_existante(db, engine, tmp_path, admin_id):
+    """Un poste importé après coup REJOINT la session existante (deux
+    sessions pour la même matière recréeraient la fuite train/test) : même
+    lot backlog, unicité des noms d'export préservée, session non modifiée —
+    les paramètres de session sont refusés au rattachement."""
+    make_jpg(tmp_path / "posteA", "photo.jpg", "red")
+    make_jpg(tmp_path / "posteB", "photo.jpg", "green")  # même nom, autre contenu
+    r1 = do_import(db, tmp_path / "posteA", admin_id=admin_id, name="s-ratt")
+    assert not r1.aborted
+
+    report = import_session_folder(
+        db, get_storage(), source_dirs=[tmp_path / "posteB"],
+        admin_id=admin_id, name="s-ratt", attach_existing=True)
+    assert not report.aborted
+    assert report.session_id == r1.session_id
+    assert report.batch_id == r1.batch_id  # même lot backlog « import »
+    # collision de nom d'export résolue par le préfixe du poste
+    assert report.renamed == [("photo.jpg", "posteB__photo.jpg")]
+    assert exec_sql(engine, "SELECT count(*) FROM images WHERE session_id = %s",
+                    (r1.session_id,)) == 2
+    assert exec_sql(engine, "SELECT count(*) FROM sessions") == 1
+
+    # rattachement à une session inconnue : refus
+    with pytest.raises(ValueError, match="introuvable"):
+        import_session_folder(db, get_storage(),
+                              source_dirs=[tmp_path / "posteB"],
+                              admin_id=admin_id, name="s-inconnue",
+                              attach_existing=True)
+    # paramètres de session refusés au rattachement (do_import pose une date)
+    with pytest.raises(ValueError, match="rattachement"):
+        do_import(db, tmp_path / "posteB", admin_id=admin_id, name="s-ratt",
+                  attach_existing=True)
+    # création sans date de capture : refus
+    with pytest.raises(ValueError, match="date de capture"):
+        import_session_folder(db, get_storage(),
+                              source_dirs=[tmp_path / "posteA"],
+                              admin_id=admin_id, name="s-neuve")
+
+
 def test_dossier_introuvable(db, tmp_path, admin_id):
     with pytest.raises(ValueError, match="introuvable"):
         do_import(db, tmp_path / "nexiste_pas", admin_id=admin_id)

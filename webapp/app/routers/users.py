@@ -26,6 +26,9 @@ def create_user(
         password_hash=hash_password(body.password),
         display_name=body.display_name,
         role=body.role,
+        # mot de passe initial posé par l'admin : à remplacer à la première
+        # connexion
+        must_change_password=True,
         created_by=admin.id,
     )
     db.add(user)
@@ -61,6 +64,11 @@ def patch_user(
         user.is_active = body.is_active
     if body.role is not None:
         user.role = body.role
+    if "display_name" in body.model_fields_set:  # null explicite = effacer
+        user.display_name = body.display_name
     if body.password is not None:
         user.password_hash = hash_password(body.password)
+        # mot de passe posé pour AUTRUI : l'intéressé le remplace à sa
+        # prochaine connexion ; le sien, l'admin vient de le choisir
+        user.must_change_password = user.id != admin.id
     return user

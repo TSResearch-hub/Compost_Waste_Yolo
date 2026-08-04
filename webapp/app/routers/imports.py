@@ -23,7 +23,10 @@ class ImportIn(BaseModel):
     # de données au split train/test
     source_dirs: list[str] = Field(min_length=1)
     name: str = Field(min_length=1)
-    captured_on: date
+    # rattacher = ajouter ces dossiers à la session `name` déjà en base (poste
+    # importé après coup) : les paramètres de session sont alors refusés
+    rattacher: bool = False
+    captured_on: date | None = None  # requise à la création
     lighting: str | None = None
     camera_height_cm: int | None = Field(default=None, ge=0)
     compost_state: str | None = None
@@ -64,7 +67,7 @@ def import_lot(
             captured_on=body.captured_on, lighting=body.lighting,
             camera_height_cm=body.camera_height_cm,
             compost_state=body.compost_state, operator=body.operator,
-            notes=body.notes,
+            notes=body.notes, attach_existing=body.rattacher,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

@@ -23,6 +23,9 @@ class UserOut(BaseModel):
     display_name: str | None
     role: str
     is_active: bool
+    # vrai = mot de passe posé par un administrateur, à remplacer à la
+    # prochaine connexion (POST /api/auth/changer-mot-de-passe)
+    must_change_password: bool
     created_at: datetime
 
 
@@ -34,8 +37,19 @@ class UserCreate(BaseModel):
 
 
 class UserPatch(BaseModel):
-    """Champs modifiables par un administrateur. Tous optionnels."""
+    """Champs modifiables par un administrateur. Tous optionnels —
+    `display_name` ne compte que s'il est présent dans le corps (null
+    explicite = effacer le nom affiché)."""
 
     is_active: bool | None = None
     role: Role | None = None
+    display_name: str | None = None
     password: str | None = Field(default=None, min_length=PASSWORD_MIN_LENGTH)
+
+
+class ChangementMotDePasseIn(BaseModel):
+    """Changement de SON PROPRE mot de passe : l'actuel est exigé — un poste
+    laissé déverrouillé ne suffit pas à voler le compte."""
+
+    actuel: str = Field(min_length=1)
+    nouveau: str = Field(min_length=PASSWORD_MIN_LENGTH)

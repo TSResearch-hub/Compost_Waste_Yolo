@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from conftest import STORAGE_TEST_ROOT, exec_sql, insert_image
+from conftest import STORAGE_TEST_ROOT, exec_sql, exec_sql_all, insert_image
 from test_import import make_jpg
 
 _sha = itertools.count(0x20)
@@ -84,6 +84,7 @@ def test_ouvrir_droits_transition_et_contenu(make_client, ctx, engine):
     assert r.status_code == 200
     corps = r.json()
     assert corps["statut"] == "en_cours" and corps["nom"] == "prop.jpg"
+    assert corps["deja_annotee"] is False  # jamais annotée à ce stade
     assert corps["largeur"] == 100 and corps["hauteur"] == 100  # cols en base
     assert corps["classes"][0] == "Plastique" and len(corps["classes"]) == 8
     assert [(b["id"], b["state"], b["source"]) for b in corps["boites"]] == [
@@ -268,6 +269,9 @@ def test_reedition(make_client, ctx, engine):
 
     r = alice.post(f"/api/images/{ctx['i_prop']}/ouvrir")
     assert r.status_code == 200 and r.json()["statut"] == "en_cours"
+    # déjà annotée : le signal SURVIT à la réouverture (le statut, non) —
+    # c'est lui qui distingue un négatif validé d'une image jamais regardée
+    assert r.json()["deja_annotee"] is True
     assert exec_sql(engine, "SELECT count(*) FROM image_status_events"
                     " WHERE image_id = %s AND from_status = 'annotee'"
                     " AND to_status = 'en_cours'", (ctx["i_prop"],)) == 1
@@ -313,9 +317,357 @@ def test_voisines(make_client, ctx, engine):
         f"/api/images/{i_fin}/voisines").status_code == 401
 
 
+def test_fermer_image(make_client, ctx, engine):
+    """Fermeture d'une image quittée sans enregistrement : retour à son
+    statut d'origine lu dans le journal (annotee si elle l'était, a_annoter
+    sinon), événement porté par l'utilisateur, annotations intactes."""
+    # droits : non authentifié, puis compte sans verrou sur le lot
+    assert make_client().post(
+        f"/api/images/{ctx['i_vierge']}/fermer").status_code == 401
+    assert login(make_client(), "bob").post(
+        f"/api/images/{ctx['i_vierge']}/fermer").status_code == 403
+    alice = login(make_client(), "alice")
+    # image inconnue
+    assert alice.post("/api/images/999999/fermer").status_code == 404
+    # pas en_cours : rien à refermer
+    assert alice.post(
+        f"/api/images/{ctx['i_vierge']}/fermer").status_code == 409
+
+    # jamais annotée : ouvrir puis fermer → retour a_annoter, événement
+    # porté par alice (jamais NULL — NULL est la signature du worker)
+    alice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    r = alice.post(f"/api/images/{ctx['i_vierge']}/fermer")
+    assert r.status_code == 200 and r.json() == {"statut": "a_annoter"}
+    assert exec_sql(engine, "SELECT status FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == "a_annoter"
+    assert exec_sql(engine, "SELECT changed_by FROM image_status_events"
+                    " WHERE image_id = %s AND from_status = 'en_cours'"
+                    " AND to_status = 'a_annoter'",
+                    (ctx["i_vierge"],)) == ctx["alice"].id
+    # refermée : plus comptée « en cours » dans l'écran des lots
+    lots = alice.get("/api/batches").json()
+    assert [l["in_progress_images"] for l in lots if l["id"] == ctx["b1"]] == [0]
+
+    # déjà annotée : enregistrer, rouvrir, fermer → retour annotee ;
+    # annotated_at intact (une fermeture n'est pas un enregistrement)
+    alice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    assert alice.put(f"/api/images/{ctx['i_vierge']}/annotations",
+                     json={"boites": []}).status_code == 200
+    annote_a = exec_sql(engine, "SELECT annotated_at FROM images"
+                        " WHERE id = %s", (ctx["i_vierge"],))
+    alice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    r = alice.post(f"/api/images/{ctx['i_vierge']}/fermer")
+    assert r.status_code == 200 and r.json() == {"statut": "annotee"}
+    assert exec_sql(engine, "SELECT status FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == "annotee"
+    assert exec_sql(engine, "SELECT annotated_at FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == annote_a
+
+    # les propositions non tranchées restent intactes (fermer ≠ trancher)
+    alice.post(f"/api/images/{ctx['i_prop']}/ouvrir")
+    assert alice.post(f"/api/images/{ctx['i_prop']}/fermer").status_code == 200
+    assert exec_sql(engine, "SELECT count(*) FROM annotations"
+                    " WHERE image_id = %s AND state = 'proposee'",
+                    (ctx["i_prop"],)) == 2
+
+    # origine « relue » : restituée telle quelle, relecteur intact —
+    # en_cours → relue est entrée dans la liste blanche (migration 0004)
+    exec_sql(engine, "UPDATE images SET status = 'relue', reviewed_by = %s,"
+             " reviewed_at = now() WHERE id = %s RETURNING id",
+             (ctx["admin"].id, ctx["i_vierge"]))
+    alice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    r = alice.post(f"/api/images/{ctx['i_vierge']}/fermer")
+    assert r.status_code == 200 and r.json() == {"statut": "relue"}
+    assert exec_sql(engine, "SELECT status || '/' || reviewed_by::text"
+                    " FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == f"relue/{ctx['admin'].id}"
+
+
+def test_relire(make_client, ctx, engine, make_user):
+    """Relecture : un annotateur confirmé (ou un administrateur) corrige ou
+    valide en l'état une image annotée par QUELQU'UN D'AUTRE — elle passe
+    `relue` avec relecteur et horodatage, l'auteur de l'annotation ne bouge
+    pas. en_cours → relue est entrée dans la liste blanche (migration 0004).
+    Une réannotation ultérieure PÉRIME la relecture."""
+    carla = make_user("carla", role="annotateur_confirme")
+
+    # alice annote (négatif) puis rouvre : l'image reste en_cours
+    alice = login(make_client(), "alice")
+    alice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    assert alice.put(f"/api/images/{ctx['i_vierge']}/annotations",
+                     json={"boites": []}).status_code == 200
+    alice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    # rôle insuffisant : un annotateur simple ne relit pas
+    assert alice.post(f"/api/images/{ctx['i_vierge']}/relire",
+                      json={"boites": []}).status_code == 403
+    assert make_client().post(f"/api/images/{ctx['i_vierge']}/relire",
+                              json={"boites": []}).status_code == 401
+
+    # le lot passe à carla (relire exige les mêmes droits d'accès qu'ouvrir)
+    exec_sql(engine, "UPDATE batch_assignments SET released_at = now(),"
+             " released_by = %s, release_reason = 'force_admin'"
+             " WHERE batch_id = %s AND released_at IS NULL RETURNING id",
+             (ctx["admin"].id, ctx["b1"]))
+    exec_sql(engine,
+             "INSERT INTO batch_assignments (batch_id, user_id, assigned_by)"
+             " VALUES (%s, %s, %s) RETURNING id",
+             (ctx["b1"], carla.id, ctx["admin"].id))
+    relectrice = login(make_client(), "carla")
+    assert relectrice.post("/api/images/999999/relire",
+                           json={"boites": []}).status_code == 404
+
+    # l'ouverture annonce qui a annoté et quand — la relecture sait qui elle
+    # relit, et le front en déduit si le bouton s'affiche
+    r = relectrice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    assert r.status_code == 200
+    corps = r.json()
+    assert corps["annotee_par_id"] == ctx["alice"].id
+    assert corps["annotee_par"] == "alice" and corps["annotee_le"] is not None
+    assert corps["relue_par"] is None and corps["relue_le"] is None
+
+    # correction en relecture : une boîte ajoutée, l'image passe relue
+    r = relectrice.post(f"/api/images/{ctx['i_vierge']}/relire", json={
+        "boites": [{"class_id": 6, "x_center": 0.5, "y_center": 0.5,
+                    "box_width": 0.2, "box_height": 0.2, "etat": "validee"}]})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"statut": "relue", "validees": 1, "rejetees": 0,
+                        "supprimees": 0}
+    assert exec_sql(engine, "SELECT status || '/' || reviewed_by::text"
+                    " FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == f"relue/{carla.id}"
+    # l'auteur de l'annotation n'a pas bougé ; la retouche est au relecteur
+    assert exec_sql(engine, "SELECT annotated_by FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == ctx["alice"].id
+    assert exec_sql(engine, "SELECT created_by FROM annotations"
+                    " WHERE image_id = %s AND class_id = 6",
+                    (ctx["i_vierge"],)) == carla.id
+    assert exec_sql(engine, "SELECT changed_by FROM image_status_events"
+                    " WHERE image_id = %s AND from_status = 'en_cours'"
+                    " AND to_status = 'relue'", (ctx["i_vierge"],)) == carla.id
+    # pas en_cours : l'ouvrir d'abord
+    assert relectrice.post(f"/api/images/{ctx['i_vierge']}/relire",
+                           json={"boites": []}).status_code == 409
+    # et l'ouverture annonce maintenant la relecture en vigueur
+    r = relectrice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    assert r.json()["relue_par"] == "carla" and r.json()["relue_le"] is not None
+
+    # une réannotation PÉRIME la relecture : carla réenregistre — l'image
+    # redevient annotee (par carla) et le relecteur est effacé, sinon la
+    # contrainte relecteur ≠ annotateur exploserait
+    bid = r.json()["boites"][0]["id"]
+    r = relectrice.put(f"/api/images/{ctx['i_vierge']}/annotations", json={
+        "boites": [{"id": bid, "class_id": 6, "x_center": 0.5,
+                    "y_center": 0.5, "box_width": 0.2, "box_height": 0.2,
+                    "etat": "validee"}]})
+    assert r.status_code == 200
+    assert exec_sql(engine, "SELECT status || '/' || annotated_by::text"
+                    " FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) == f"annotee/{carla.id}"
+    assert exec_sql(engine, "SELECT reviewed_by FROM images WHERE id = %s",
+                    (ctx["i_vierge"],)) is None
+
+    # on ne relit pas sa propre annotation
+    relectrice.post(f"/api/images/{ctx['i_vierge']}/ouvrir")
+    r = relectrice.post(f"/api/images/{ctx['i_vierge']}/relire",
+                        json={"boites": []})
+    assert r.status_code == 409 and "propre annotation" in r.json()["detail"]
+
+    # une image jamais annotée n'a rien à relire
+    relectrice.post(f"/api/images/{ctx['i_prop']}/ouvrir")
+    r = relectrice.post(f"/api/images/{ctx['i_prop']}/relire",
+                        json={"boites": []})
+    assert r.status_code == 409 and "jamais annotée" in r.json()["detail"]
+
+
+def test_passer_a_annoter(make_client, ctx, engine):
+    """Court-circuit admin de la file : tout-ou-rien, événement porté par
+    l'admin (jamais NULL — NULL est la signature du worker), motifs d'échec
+    laissés en place."""
+    # droits : non authentifié, puis annotateur (même détenteur du lot)
+    assert make_client().post("/api/images/passer-a-annoter", json={
+        "image_ids": [ctx["i_file"]]}).status_code == 401
+    assert login(make_client(), "alice").post(
+        "/api/images/passer-a-annoter",
+        json={"image_ids": [ctx["i_file"]]}).status_code == 403
+
+    admin = login(make_client(), "root")
+    # tout-ou-rien : une image hors file fait échouer le lot entier
+    r = admin.post("/api/images/passer-a-annoter", json={
+        "image_ids": [ctx["i_file"], ctx["i_vierge"]]})
+    assert r.status_code == 409 and str(ctx["i_vierge"]) in r.json()["detail"]
+    assert exec_sql(engine, "SELECT status FROM images WHERE id = %s",
+                    (ctx["i_file"],)) == "en_attente_preannotation"
+    # id inconnu
+    assert admin.post("/api/images/passer-a-annoter", json={
+        "image_ids": [ctx["i_file"], 999999]}).status_code == 404
+    # liste vide refusée par le schéma
+    assert admin.post("/api/images/passer-a-annoter",
+                      json={"image_ids": []}).status_code == 422
+
+    # nominal, sur une image « garée » : les motifs d'échec restent en place
+    exec_sql(engine, "UPDATE images SET preannotation_attempts = 3,"
+             " preannotation_error = 'poids illisibles',"
+             " preannotation_error_kind = 'moteur_indisponible'"
+             " WHERE id = %s RETURNING id", (ctx["i_file"],))
+    r = admin.post("/api/images/passer-a-annoter",
+                   json={"image_ids": [ctx["i_file"]]})
+    assert r.status_code == 200 and r.json() == {"passees": 1}
+    assert exec_sql(engine, "SELECT status FROM images WHERE id = %s",
+                    (ctx["i_file"],)) == "a_annoter"
+    assert exec_sql(engine, "SELECT preannotation_attempts FROM images"
+                    " WHERE id = %s", (ctx["i_file"],)) == 3
+    # événement tracé avec l'admin comme auteur, pas NULL
+    assert exec_sql(engine, "SELECT changed_by FROM image_status_events"
+                    " WHERE image_id = %s"
+                    " AND from_status = 'en_attente_preannotation'"
+                    " AND to_status = 'a_annoter'",
+                    (ctx["i_file"],)) == ctx["admin"].id
+    # l'image sortie de la file n'est plus comptée « garée »
+    lots = admin.get("/api/batches").json()
+    assert [l["parked_images"] for l in lots if l["id"] == ctx["b1"]] == [0]
+
+    # rejouer le même geste : l'image n'est plus en file
+    assert admin.post("/api/images/passer-a-annoter", json={
+        "image_ids": [ctx["i_file"]]}).status_code == 409
+    # image archivée : introuvable
+    exec_sql(engine, "UPDATE images SET superseded_at = %s WHERE id = %s"
+             " RETURNING id", (datetime.now(timezone.utc), ctx["i_vierge"]))
+    assert admin.post("/api/images/passer-a-annoter", json={
+        "image_ids": [ctx["i_vierge"]]}).status_code == 404
+
+
+def test_images_du_lot(make_client, ctx, engine):
+    """Liste ordonnée par id, archivées exclues, propositions comptées —
+    mêmes droits que l'avancement."""
+    ids = {"s1": ctx["s1"], "b1": ctx["b1"]}
+    poser_image(engine, ids, "arch2.jpg",
+                superseded_at=datetime.now(timezone.utc))
+
+    assert make_client().get(
+        f"/api/batches/{ctx['b1']}/images").status_code == 401
+    assert login(make_client(), "bob").get(
+        f"/api/batches/{ctx['b1']}/images").status_code == 403
+    assert login(make_client(), "root").get(
+        f"/api/batches/{ctx['b1']}/images").status_code == 200
+    assert login(make_client(), "root").get(
+        "/api/batches/99999/images").status_code == 404
+
+    alice = login(make_client(), "alice")
+    corps = alice.get(f"/api/batches/{ctx['b1']}/images").json()
+    assert [(i["nom"], i["statut"], i["propositions"]) for i in corps] == [
+        ("prop.jpg", "a_annoter", 2),
+        ("vierge.jpg", "a_annoter", 0),
+        ("file.jpg", "en_attente_preannotation", 0),
+    ]
+    assert [i["id"] for i in corps] == sorted(i["id"] for i in corps)
+    # classes présentes (proposées ou validées) : la trame du filtre
+    assert [i["classes"] for i in corps] == [[0, 1], [], []]
+
+    # une proposition tranchée ne compte plus
+    alice.post(f"/api/images/{ctx['i_prop']}/ouvrir")
+    alice.put(f"/api/images/{ctx['i_prop']}/annotations", json={"boites": [
+        {"id": ctx["p1"], "class_id": 0, "x_center": 0.3, "y_center": 0.3,
+         "box_width": 0.1, "box_height": 0.1, "etat": "validee"},
+        {"id": ctx["p2"], "class_id": 1, "x_center": 0.6, "y_center": 0.6,
+         "box_width": 0.2, "box_height": 0.2, "etat": "rejetee"},
+    ]})
+    corps = alice.get(f"/api/batches/{ctx['b1']}/images").json()
+    assert (corps[0]["statut"], corps[0]["propositions"]) == ("annotee", 0)
+    # la rejetée (classe 1) ne « porte » plus sa classe — faux positif
+    assert corps[0]["classes"] == [0]
+
+
+def test_referentiel_classes(make_client, ctx):
+    """GET /api/images/classes : le référentiel data.yaml pour les écrans
+    sans image ouverte (filtre de la liste). Authentifié, sans rôle requis."""
+    assert make_client().get("/api/images/classes").status_code == 401
+    r = login(make_client(), "alice").get("/api/images/classes")
+    assert r.status_code == 200
+    classes = r.json()["classes"]
+    assert classes[0] == "Plastique" and len(classes) == 8
+
+
+@pytest.fixture
+def reduction_128():
+    """Force un côté max de 128 px pour tester la réduction sur de petits
+    fichiers ; restaure la configuration en sortie."""
+    import os
+
+    from app.config import get_settings
+
+    os.environ["REDUCTION_MAX_COTE"] = "128"
+    get_settings.cache_clear()
+    yield
+    os.environ.pop("REDUCTION_MAX_COTE", None)
+    get_settings.cache_clear()
+
+
+def test_fichier_reduit_et_coordonnees_stables(make_client, ctx, engine,
+                                               reduction_128):
+    """Au-delà du côté max, /fichier sert une réduction JPEG mise en cache
+    (répertoire dédié) ; l'original reste intact et accessible ; et surtout
+    LES COORDONNÉES NE BOUGENT PAS : normalisées, elles se rapportent aux
+    dimensions du fichier annoté, jamais à celles de la réduction."""
+    import io as io_
+
+    from PIL import Image as PILImage
+
+    from app.storage import get_storage
+
+    ids = {"s1": ctx["s1"], "b1": ctx["b1"]}
+    dossier = STORAGE_TEST_ROOT / "canvas"
+    dossier.mkdir(parents=True, exist_ok=True)
+    PILImage.new("RGB", (200, 150), "green").save(dossier / "grande.jpg")
+    sha = f"{next(_sha):02x}" * 32
+    i_grande = insert_image(engine, ids, sha, "canvas/grande.jpg",
+                            status="a_annoter", width=200, height=150)
+
+    alice = login(make_client(), "alice")
+    r = alice.get(f"/api/images/{i_grande}/fichier")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert PILImage.open(io_.BytesIO(r.content)).size == (128, 96)
+    # cache créé dans son répertoire dédié, resservi tel quel
+    cache_dir = STORAGE_TEST_ROOT / ".cache_reduites"
+    fichiers = sorted(cache_dir.iterdir())
+    assert len(fichiers) == 1
+    assert alice.get(f"/api/images/{i_grande}/fichier").content == r.content
+    assert sorted(cache_dir.iterdir()) == fichiers
+    # l'original n'est jamais modifié et reste accessible
+    ro = alice.get(f"/api/images/{i_grande}/fichier?original=true")
+    assert ro.content == get_storage().read("canvas/grande.jpg")
+    # sous le seuil : servie telle quelle, aucune entrée de cache
+    rp = alice.get(f"/api/images/{ctx['i_vierge']}/fichier")
+    assert rp.content == get_storage().read("canvas/vierge.jpg")
+    assert sorted(cache_dir.iterdir()) == fichiers
+
+    # invariance des coordonnées : dimensions annoncées = fichier annoté,
+    # aller-retour exact des valeurs normalisées, réduction ou pas
+    corps = alice.post(f"/api/images/{i_grande}/ouvrir").json()
+    assert (corps["largeur"], corps["hauteur"]) == (200, 150)
+    r = alice.put(f"/api/images/{i_grande}/annotations", json={"boites": [
+        {"class_id": 5, "x_center": 0.25, "y_center": 0.4,
+         "box_width": 0.5, "box_height": 0.25, "etat": "validee"}]})
+    assert r.status_code == 200
+    ligne = exec_sql_all(engine, "SELECT x_center, y_center, box_width,"
+                         " box_height FROM annotations WHERE image_id = %s",
+                         (i_grande,))
+    assert list(ligne[0]) == [0.25, 0.4, 0.5, 0.25]
+    corps = alice.post(f"/api/images/{i_grande}/ouvrir").json()
+    boite = corps["boites"][0]
+    assert (boite["x_center"], boite["y_center"], boite["box_width"],
+            boite["box_height"]) == (0.25, 0.4, 0.5, 0.25)
+
+
 def test_avancement(make_client, ctx, engine):
     alice = login(make_client(), "alice")
     alice.post(f"/api/images/{ctx['i_prop']}/ouvrir")  # -> en_cours
+
+    # les lots comptent l'en_cours À PART : l'avancement ne recule pas
+    # parce qu'on a ouvert une image
+    lots = alice.get("/api/batches").json()
+    lot = next(l for l in lots if l["id"] == ctx["b1"])
+    assert (lot["done_images"], lot["in_progress_images"]) == (0, 1)
 
     r = alice.get(f"/api/batches/{ctx['b1']}/avancement")
     assert r.status_code == 200

@@ -1,0 +1,761 @@
+/* Styles volontairement simples — pas de bibliothèque UI. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #1f2430;
+  background: #f2f3f5;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0;
+}
+h2 {
+  font-size: 16px;
+  margin: 18px 0 8px;
+}
+
+.plein-ecran-message {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667;
+}
+
+/* ── Boutons ─────────────────────────────────────────────────────────── */
+
+.btn {
+  border: 1px solid #b9bfc9;
+  background: #fff;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1f2430;
+}
+.btn:hover:not(:disabled) {
+  background: #eef1f5;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primaire {
+  background: #1f8a4c;
+  border-color: #1f8a4c;
+  color: #fff;
+  font-weight: 600;
+}
+.btn-primaire:hover:not(:disabled) {
+  background: #17703d;
+}
+.btn-danger {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #fdeeec;
+}
+.btn-petit {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+.btn-large {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+/* ── Login ───────────────────────────────────────────────────────────── */
+
+.login-fond {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-carte {
+  background: #fff;
+  border: 1px solid #d5d9e0;
+  border-radius: 10px;
+  padding: 28px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-carte label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.login-carte input {
+  border: 1px solid #b9bfc9;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 14px;
+}
+.texte-erreur {
+  color: #c0392b;
+  margin: 0;
+}
+
+/* ── Pages / barres ──────────────────────────────────────────────────── */
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 18px;
+}
+.barre {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #d5d9e0;
+}
+.page .barre {
+  border: 1px solid #d5d9e0;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.barre-titre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.barre-droite {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.nom-image {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.texte-doux {
+  color: #667;
+  font-size: 13px;
+}
+
+/* ── Tableaux (lots) ─────────────────────────────────────────────────── */
+
+.table-lots {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #d5d9e0;
+  border-radius: 8px;
+}
+.table-lots th,
+.table-lots td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e6e9ee;
+}
+.table-lots th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #667;
+}
+.cellule-nombre {
+  white-space: nowrap;
+}
+.cellule-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ── Badges / bandeaux ───────────────────────────────────────────────── */
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-garees {
+  background: #fdecdd;
+  color: #b35c00;
+  margin-left: 8px;
+}
+.badge-chrono {
+  background: #eef1f5;
+  color: #445;
+}
+.badge-proposee {
+  background: #ff8800;
+  color: #1a1a1a;
+}
+.badge-validee {
+  background: #1f8a4c;
+  color: #fff;
+}
+.badge-rejetee {
+  background: #8a8a8a;
+  color: #fff;
+}
+
+.bandeau {
+  padding: 8px 14px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bandeau-erreur {
+  background: #fdeeec;
+  color: #a93226;
+  border-bottom: 1px solid #f2c7c1;
+}
+.bandeau-info {
+  background: #e8f4fd;
+  color: #1a5a8a;
+  border-bottom: 1px solid #c4e0f5;
+}
+.bandeau-brouillon {
+  background: #fff8e1;
+  color: #7a5b00;
+  border-bottom: 1px solid #f0e2ae;
+}
+/* le bandeau des propositions doit se voir : c'est lui qui empêche de
+   valider sans regarder */
+.bandeau-propositions {
+  background: #ff8800;
+  color: #1a1a1a;
+  font-weight: 600;
+  border-bottom: 1px solid #d97400;
+}
+
+/* ── Écran d'annotation ──────────────────────────────────────────────── */
+
+.page-annotation {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.zone-centrale {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.zone-canvas {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #23262d;
+}
+
+/* Étiquette « image sans boîte » : négatif validé ou jamais regardée —
+   les deux cas seraient indiscernables sans elle */
+.etiquette-vide {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 5;
+  white-space: nowrap;
+}
+.etiquette-negatif {
+  background: #e6f4ea;
+  color: #1f8a4c;
+  border: 1px solid #9fd4b2;
+}
+.etiquette-vierge {
+  background: #fff3cd;
+  color: #8a6d1a;
+  border: 1px solid #e6d38a;
+}
+
+.cellule-nombre .badge {
+  margin-left: 8px;
+}
+/* ── Liste des images du lot ─────────────────────────────────────────── */
+
+.liste-images {
+  width: 300px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: #fff;
+  border-right: 1px solid #d5d9e0;
+  padding: 6px;
+}
+.ligne-image {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  padding: 5px 7px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  color: #1f2430;
+}
+.ligne-image:hover:not(:disabled) {
+  background: #eef1f5;
+}
+.ligne-image:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ligne-image-courante {
+  background: #e2ecf9;
+  font-weight: 600;
+}
+.ligne-image-num {
+  color: #99a;
+  font-size: 11px;
+  width: 30px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.ligne-image-nom {
+  font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.ligne-image-prop {
+  color: #b35c00;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.badge-statut-a_annoter {
+  background: #e8f4fd;
+  color: #1a5a8a;
+}
+.badge-statut-en_cours {
+  background: #fff3e0;
+  color: #b35c00;
+}
+.badge-statut-annotee {
+  background: #e6f4ea;
+  color: #1f8a4c;
+}
+.badge-statut-relue {
+  background: #f0e6f7;
+  color: #7b3fa0;
+}
+.badge-statut-en_attente_preannotation {
+  background: #eef1f5;
+  color: #667;
+}
+.btn-enfonce {
+  background: #e2ecf9;
+  border-color: #7d9fc9;
+}
+
+.panneau {
+  width: 258px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: #fff;
+  border-left: 1px solid #d5d9e0;
+  padding: 12px;
+}
+
+.titre-panneau {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #889;
+  margin: 14px 0 6px;
+}
+
+.bloc-selection {
+  border: 1px solid #d5d9e0;
+  border-left: 4px solid #4363d8;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 10px;
+  background: #f7f9fc;
+}
+.bloc-selection-titre {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.bloc-selection-etat {
+  margin-bottom: 6px;
+}
+
+.grille-classes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.btn-classe {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 2px solid;
+  border-radius: 6px;
+  background: #fff;
+  padding: 5px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.btn-classe-active {
+  background: #eef1f5;
+  font-weight: 700;
+  outline: 2px solid #1f2430;
+}
+.pastille {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.btn-classe-chiffre {
+  font-size: 10px;
+  color: #889;
+  flex-shrink: 0;
+}
+.btn-classe-nom {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rangee-boutons {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rangee-boutons .btn {
+  flex: 1;
+}
+
+.ligne-case {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ligne-reglage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #556;
+}
+.ligne-reglage > span:first-child {
+  width: 58px;
+  flex-shrink: 0;
+}
+.ligne-reglage input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.valeur-reglage {
+  width: 38px;
+  text-align: right;
+  color: #99a;
+  flex-shrink: 0;
+}
+
+.aide {
+  margin-top: 14px;
+  border-top: 1px solid #e6e9ee;
+}
+.aide p {
+  font-size: 12px;
+  color: #667;
+  line-height: 1.7;
+  margin: 4px 0 0;
+}
+
+.fin-de-lot {
+  background: #fff;
+  border-radius: 10px;
+  padding: 30px 36px;
+  text-align: center;
+  max-width: 460px;
+}
+.fin-de-lot-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+/* ── Écran des lots (admin) ───────────────────────────────────────────── */
+
+.avancement-lot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.groupe-assignation {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.groupe-assignation select {
+  max-width: 130px;
+  font-size: 12px;
+  padding: 3px;
+}
+
+/* ── Comptes / formulaires admin ──────────────────────────────────────── */
+
+.formulaire-ligne {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #d5d9e0;
+  border-radius: 8px;
+  padding: 12px;
+}
+.formulaire-ligne label,
+.carte-formulaire label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.formulaire-ligne input,
+.formulaire-ligne select,
+.carte-formulaire input,
+.carte-formulaire select,
+.carte-formulaire textarea {
+  border: 1px solid #b9bfc9;
+  border-radius: 6px;
+  padding: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  font-family: inherit;
+}
+.ligne-inactive td {
+  opacity: 0.55;
+}
+.table-lots td select {
+  font-size: 12px;
+  padding: 3px;
+}
+
+.carte-formulaire {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #d5d9e0;
+  border-radius: 8px;
+  padding: 14px;
+}
+.carte-formulaire .btn {
+  align-self: flex-start;
+}
+.rangee-champs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rangee-champs label {
+  flex: 1;
+  min-width: 140px;
+}
+.grille-sessions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 2px 12px;
+}
+.grille-sessions .ligne-case,
+.carte-formulaire .ligne-case {
+  margin-top: 0;
+  font-weight: 400;
+}
+
+.carte-rapport {
+  background: #fff;
+  border: 1px solid #d5d9e0;
+  border-left: 4px solid #1f8a4c;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 10px;
+}
+.carte-rapport h3 {
+  font-size: 13px;
+  margin: 10px 0 4px;
+}
+.liste-rapport {
+  margin: 4px 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: #445;
+}
+
+/* ── Filtres de la liste d'images ─────────────────────────────────────── */
+
+.filtres-liste {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 2px 8px;
+  border-bottom: 1px solid #e6e9ee;
+  margin-bottom: 4px;
+}
+.filtres-liste select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px;
+  border: 1px solid #b9bfc9;
+  border-radius: 5px;
+}
+.filtres-compte {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/* ── Relecture ────────────────────────────────────────────────────────── */
+
+.bloc-relecture {
+  border: 1px solid #d5d9e0;
+  border-left: 4px solid #7b3fa0;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 10px;
+  background: #faf7fc;
+  font-size: 12px;
+}
+.btn-relire {
+  border-color: #7b3fa0;
+  color: #7b3fa0;
+  font-weight: 600;
+}
+.btn-relire:hover:not(:disabled) {
+  background: #f0e6f7;
+}
+
+/* ── Guide d'annotation ───────────────────────────────────────────────── */
+
+.guide-voile {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 22, 28, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.guide-panneau {
+  background: #fff;
+  border-radius: 10px;
+  padding: 18px 22px;
+  max-width: 860px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.guide-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.guide-entete h2 {
+  margin: 0;
+}
+.guide-panneau h3 {
+  font-size: 14px;
+  margin: 14px 0 6px;
+}
+.guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.guide-table th,
+.guide-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #e6e9ee;
+  vertical-align: top;
+}
+.guide-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #667;
+}
+.guide-classe {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.guide-classe .pastille {
+  display: inline-block;
+  margin-right: 6px;
+}
+.guide-regles {
+  margin: 4px 0 6px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* Écran étroit : panneau sous le canvas */
+@media (max-width: 760px) {
+  .zone-centrale {
+    flex-direction: column;
+  }
+  .panneau {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #d5d9e0;
+  }
+}

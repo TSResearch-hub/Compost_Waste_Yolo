@@ -85,9 +85,10 @@ def test_admin_ne_se_verrouille_pas_lui_meme(make_client, make_user):
     for patch in ({"is_active": False}, {"role": "annotateur"}):
         r = admin.patch(f"/api/users/{root.id}", json=patch)
         assert r.status_code == 400
-    # changer son propre mot de passe reste permis
+    # changer son propre mot de passe reste permis — et il vient de le
+    # choisir : pas de changement obligatoire à la connexion suivante
     r = admin.patch(f"/api/users/{root.id}", json={"password": "nouveaumdp123"})
-    assert r.status_code == 200
+    assert r.status_code == 200 and r.json()["must_change_password"] is False
     _login(make_client(), "root", "nouveaumdp123")
 
 
@@ -96,10 +97,57 @@ def test_reset_mot_de_passe_d_autrui(make_client, make_user):
     alice = make_user("alice")
     admin = make_client()
     _login(admin, "root")
-    assert admin.patch(
-        f"/api/users/{alice.id}", json={"password": "toutneuf12345"}
-    ).status_code == 200
+    r = admin.patch(f"/api/users/{alice.id}", json={"password": "toutneuf12345"})
+    # mot de passe posé pour autrui : à remplacer à la prochaine connexion
+    assert r.status_code == 200 and r.json()["must_change_password"] is True
     c = make_client()
     assert c.post("/api/auth/login", json={
         "username": "alice", "password": "motdepasse123"}).status_code == 401
-    _login(c, "alice", "toutneuf12345")
+    assert _login(c, "alice", "toutneuf12345").json()[
+        "must_change_password"] is True
+
+
+def test_mot_de_passe_initial_doit_changer(make_client, make_user):
+    """Un compte créé par l'admin doit remplacer son mot de passe initial :
+    l'actuel est exigé, le changement lève l'obligation et révoque les
+    AUTRES sessions du compte (un mot de passe initial a pu circuler)."""
+    make_user("root", role="administrateur")
+    admin = make_client()
+    _login(admin, "root")
+    r = admin.post("/api/users", json={
+        "username": "dora", "password": "motdepasse123", "role": "annotateur"})
+    assert r.status_code == 201 and r.json()["must_change_password"] is True
+
+    dora, autre = make_client(), make_client()
+    assert _login(dora, "dora").json()["must_change_password"] is True
+    _login(autre, "dora")
+    # mauvais mot de passe actuel : refus (un poste laissé déverrouillé ne
+    # suffit pas à voler le compte)
+    assert dora.post("/api/auth/changer-mot-de-passe", json={
+        "actuel": "mauvais", "nouveau": "monchoix12345"}).status_code == 400
+    # nouveau trop court : refus du schéma
+    assert dora.post("/api/auth/changer-mot-de-passe", json={
+        "actuel": "motdepasse123", "nouveau": "court"}).status_code == 422
+    r = dora.post("/api/auth/changer-mot-de-passe", json={
+        "actuel": "motdepasse123", "nouveau": "monchoix12345"})
+    assert r.status_code == 200 and r.json()["must_change_password"] is False
+    # la session courante survit, l'autre est révoquée
+    assert dora.get("/api/auth/me").status_code == 200
+    assert autre.get("/api/auth/me").status_code == 401
+    _login(make_client(), "dora", "monchoix12345")
+
+
+def test_modification_nom_affiche(make_client, make_user):
+    """display_name modifiable par l'admin ; null EXPLICITE = effacer, corps
+    sans le champ = intact."""
+    make_user("root", role="administrateur")
+    alice = make_user("alice")
+    admin = make_client()
+    _login(admin, "root")
+    r = admin.patch(f"/api/users/{alice.id}", json={"display_name": "Alice A."})
+    assert r.status_code == 200 and r.json()["display_name"] == "Alice A."
+    r = admin.patch(f"/api/users/{alice.id}",
+                    json={"role": "annotateur_confirme"})
+    assert r.json()["display_name"] == "Alice A."
+    r = admin.patch(f"/api/users/{alice.id}", json={"display_name": None})
+    assert r.json()["display_name"] is None

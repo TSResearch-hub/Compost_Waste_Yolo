@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     data_yaml_path: Path
     auth_inactivity_minutes: int = 30
 
+    # ── Canvas : version réduite servie pour l'annotation ────────────────────
+    # Côté max (px) au-delà duquel /fichier sert une réduction JPEG mise en
+    # cache (générée au premier accès). Les coordonnées étant normalisées,
+    # la taille servie n'a aucun effet sur les boîtes. 2048 : voir README.
+    reduction_max_cote: int = 2048
+    # Répertoire du cache des réductions — JAMAIS mêlé aux originaux.
+    # Défaut : {storage_root}/.cache_reduites
+    reduction_cache_dir: Path | None = None
+
     # ── Worker de pré-annotation (lot L2) ────────────────────────────────────
     # Poids YOLO : requis par le worker seul, le serveur web démarre sans
     weights_path: Path | None = None

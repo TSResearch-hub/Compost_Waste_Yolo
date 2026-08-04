@@ -5,6 +5,7 @@ batch_assignments qui garantit un seul annotateur actif par lot, y compris
 sous assignations concurrentes — l'API se contente de traduire la violation
 d'unicité en 409.
 """
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,8 +15,9 @@ from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
 from ..deps import get_current_user, get_db, require_roles
-from ..models import (IMAGE_STATUSES, Batch, BatchAssignment, CaptureSession,
-                      Image, ImageStatusEvent, User)
+from ..models import (IMAGE_STATUSES, Annotation, Batch, BatchAssignment,
+                      CaptureSession, Image, ImageStatusEvent, User)
+from ..statuts import ORIGINES_RESTITUABLES, origines_en_cours
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
 
@@ -26,8 +28,15 @@ class BatchOut(BaseModel):
     session_name: str
     name: str
     holder: str | None
+    # depuis quand le détenteur actif tient le verrou (None sans détenteur)
+    holder_since: datetime | None
     total_images: int
     done_images: int
+    # Images `en_cours`, comptées À PART : ouvrir une image annotée pour la
+    # relire la repasse en_cours — l'avancement ne doit pas paraître reculer
+    # quand on a simplement ouvert une image (problème de présentation,
+    # le modèle de données ne bouge pas)
+    in_progress_images: int
     # Images « garées » : échec de pré-annotation au plafond de tentatives.
     # Elles ont le statut en_attente_preannotation mais ne progresseront plus
     # sans geste admin — les compter à part évite d'attendre une file morte
@@ -52,54 +61,20 @@ class SplitIn(BaseModel):
     size: int = Field(ge=1, le=1000)
 
 
-@router.get("", response_model=list[BatchOut])
-def list_batches(db=Depends(get_db), user: User = Depends(get_current_user)):
-    active = (
-        select(BatchAssignment.batch_id, BatchAssignment.user_id)
-        .where(BatchAssignment.released_at.is_(None))
-        .subquery()
-    )
-    counts = (
-        select(
-            Image.batch_id,
-            func.count().label("total"),
-            func.count().filter(Image.status.in_(("annotee", "relue"))).label("done"),
-            func.count().filter(and_(
-                Image.status == "en_attente_preannotation",
-                Image.preannotation_attempts
-                >= get_settings().worker_max_attempts,
-            )).label("parked"),
-        )
-        .where(Image.superseded_at.is_(None))
-        .group_by(Image.batch_id)
-        .subquery()
-    )
-    rows = db.execute(
-        select(
-            Batch.id, Batch.session_id, CaptureSession.name, Batch.name,
-            User.username,
-            func.coalesce(counts.c.total, 0), func.coalesce(counts.c.done, 0),
-            func.coalesce(counts.c.parked, 0),
-        )
-        .join(CaptureSession, CaptureSession.id == Batch.session_id)
-        .outerjoin(active, active.c.batch_id == Batch.id)
-        .outerjoin(User, User.id == active.c.user_id)
-        .outerjoin(counts, counts.c.batch_id == Batch.id)
-        .order_by(Batch.id)
-    ).all()
-    return [
-        BatchOut(id=r[0], session_id=r[1], session_name=r[2], name=r[3],
-                 holder=r[4], total_images=r[5], done_images=r[6],
-                 parked_images=r[7])
-        for r in rows
-    ]
+class ImageLotOut(BaseModel):
+    id: int
+    nom: str  # export_filename
+    statut: str
+    propositions: int  # boîtes du modèle encore 'proposee' (à trancher)
+    # class_id présents sur l'image (boîtes proposées ou validées — les
+    # rejetées sont des faux positifs, elles ne « portent » pas la classe) :
+    # sert au filtre « toutes les images portant du Composite »
+    classes: list[int]
 
 
-@router.get("/{batch_id}/avancement", response_model=AvancementOut)
-def avancement(batch_id: int, db=Depends(get_db),
-               user: User = Depends(get_current_user)):
-    """Compteurs par statut du lot — l'annotateur suit sa campagne, l'admin
-    n'importe quel lot."""
+def _acces_lot(db, user: User, batch_id: int) -> None:
+    """Le lot existe et le compte y a droit : administrateur, ou détenteur
+    du verrou actif."""
     if db.get(Batch, batch_id) is None:
         raise HTTPException(status_code=404, detail="Lot inconnu")
     if user.role != "administrateur":
@@ -113,6 +88,60 @@ def avancement(batch_id: int, db=Depends(get_db),
         if verrou is None:
             raise HTTPException(status_code=403,
                                 detail="Lot non détenu par ce compte")
+
+
+@router.get("", response_model=list[BatchOut])
+def list_batches(db=Depends(get_db), user: User = Depends(get_current_user)):
+    active = (
+        select(BatchAssignment.batch_id, BatchAssignment.user_id,
+               BatchAssignment.assigned_at)
+        .where(BatchAssignment.released_at.is_(None))
+        .subquery()
+    )
+    counts = (
+        select(
+            Image.batch_id,
+            func.count().label("total"),
+            func.count().filter(Image.status.in_(("annotee", "relue"))).label("done"),
+            func.count().filter(Image.status == "en_cours").label("in_progress"),
+            func.count().filter(and_(
+                Image.status == "en_attente_preannotation",
+                Image.preannotation_attempts
+                >= get_settings().worker_max_attempts,
+            )).label("parked"),
+        )
+        .where(Image.superseded_at.is_(None))
+        .group_by(Image.batch_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(
+            Batch.id, Batch.session_id, CaptureSession.name, Batch.name,
+            User.username, active.c.assigned_at,
+            func.coalesce(counts.c.total, 0), func.coalesce(counts.c.done, 0),
+            func.coalesce(counts.c.in_progress, 0),
+            func.coalesce(counts.c.parked, 0),
+        )
+        .join(CaptureSession, CaptureSession.id == Batch.session_id)
+        .outerjoin(active, active.c.batch_id == Batch.id)
+        .outerjoin(User, User.id == active.c.user_id)
+        .outerjoin(counts, counts.c.batch_id == Batch.id)
+        .order_by(Batch.id)
+    ).all()
+    return [
+        BatchOut(id=r[0], session_id=r[1], session_name=r[2], name=r[3],
+                 holder=r[4], holder_since=r[5], total_images=r[6],
+                 done_images=r[7], in_progress_images=r[8], parked_images=r[9])
+        for r in rows
+    ]
+
+
+@router.get("/{batch_id}/avancement", response_model=AvancementOut)
+def avancement(batch_id: int, db=Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """Compteurs par statut du lot — l'annotateur suit sa campagne, l'admin
+    n'importe quel lot."""
+    _acces_lot(db, user, batch_id)
     lignes = db.execute(
         select(Image.status, func.count())
         .where(Image.batch_id == batch_id, Image.superseded_at.is_(None))
@@ -122,6 +151,40 @@ def avancement(batch_id: int, db=Depends(get_db),
     par_statut.update(dict(lignes))
     return AvancementOut(batch_id=batch_id, total=sum(par_statut.values()),
                          par_statut=par_statut)
+
+
+@router.get("/{batch_id}/images", response_model=list[ImageLotOut])
+def images_du_lot(batch_id: int, db=Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Liste ordonnée des images actives du lot — la trame de la campagne :
+    position dans le lot, reprise (première `en_cours` sinon `a_annoter`),
+    propositions restant à trancher par image. Mêmes droits que
+    l'avancement : détenteur du verrou actif, ou administrateur."""
+    _acces_lot(db, user, batch_id)
+    propositions = (
+        select(Annotation.image_id, func.count().label("n"))
+        .where(Annotation.state == "proposee")
+        .group_by(Annotation.image_id)
+        .subquery()
+    )
+    presentes = (
+        select(Annotation.image_id,
+               func.array_agg(Annotation.class_id.distinct()).label("cls"))
+        .where(Annotation.state != "rejetee")
+        .group_by(Annotation.image_id)
+        .subquery()
+    )
+    lignes = db.execute(
+        select(Image.id, Image.export_filename, Image.status,
+               func.coalesce(propositions.c.n, 0), presentes.c.cls)
+        .outerjoin(propositions, propositions.c.image_id == Image.id)
+        .outerjoin(presentes, presentes.c.image_id == Image.id)
+        .where(Image.batch_id == batch_id, Image.superseded_at.is_(None))
+        .order_by(Image.id)
+    ).all()
+    return [ImageLotOut(id=l[0], nom=l[1], statut=l[2], propositions=l[3],
+                        classes=sorted(l[4] or ()))
+            for l in lignes]
 
 
 @router.post("/{batch_id}/assign", status_code=201)
@@ -183,20 +246,26 @@ def release_batch(
     assignment.released_by = user.id
     assignment.release_reason = reason
 
-    # Règle validée : les images restées en cours redescendent à « à annoter »,
-    # événement tracé — le repreneur continue là où ça s'est arrêté
-    reverted = db.scalars(
-        update(Image)
-        .where(Image.batch_id == batch_id, Image.status == "en_cours",
-               Image.superseded_at.is_(None))
-        .values(status="a_annoter")
-        .returning(Image.id)
+    # Les images restées « en cours » reviennent à leur statut d'ORIGINE, lu
+    # dans le journal — même règle que POST /images/{id}/fermer : une image
+    # annotée rouverte puis abandonnée reste annotée, la rétrograder la
+    # sortirait de l'export (donc de l'entraînement) sans aucun signal.
+    # Origine inconnue (ligne posée hors API) : a_annoter, le défaut sûr.
+    en_cours = db.scalars(
+        select(Image).where(Image.batch_id == batch_id,
+                            Image.status == "en_cours",
+                            Image.superseded_at.is_(None))
     ).all()
-    for image_id in reverted:
-        db.add(ImageStatusEvent(image_id=image_id, from_status="en_cours",
-                                to_status="a_annoter", changed_by=user.id))
+    origines = origines_en_cours(db, (i.id for i in en_cours))
+    for image in en_cours:
+        origine = origines.get(image.id)
+        if origine not in ORIGINES_RESTITUABLES:
+            origine = "a_annoter"
+        db.add(ImageStatusEvent(image_id=image.id, from_status="en_cours",
+                                to_status=origine, changed_by=user.id))
+        image.status = origine
     return {"batch_id": batch_id, "reason": reason,
-            "reverted_images": len(reverted)}
+            "reverted_images": len(en_cours)}
 
 
 @router.post("/{batch_id}/split")

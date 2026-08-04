@@ -65,12 +65,18 @@ PREANNOTATION_ERROR_KINDS = (
 )
 
 # Transitions de statut autorisées — la même liste est gravée dans le trigger
-# de la migration 0001 ; toute évolution doit toucher les deux.
+# CW002 (migration 0001, remplacé par 0004) ; toute évolution doit toucher
+# les deux.
 IMAGE_STATUS_TRANSITIONS = (
     ("en_attente_preannotation", "a_annoter"),
     ("a_annoter", "en_cours"),
     ("en_cours", "a_annoter"),
     ("en_cours", "annotee"),
+    # Relecture (migration 0004) : ouvrir est le seul mode d'accès à une
+    # image, donc valider ou corriger une relecture part TOUJOURS de
+    # en_cours ; cette paire sert aussi à fermer/release pour restituer une
+    # image relue rouverte puis abandonnée
+    ("en_cours", "relue"),
     ("annotee", "relue"),
     ("annotee", "en_cours"),
     ("relue", "en_cours"),
@@ -94,6 +100,12 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # Mot de passe posé par un administrateur (création, réinitialisation) :
+    # l'intéressé doit le remplacer à sa prochaine connexion. Faux pour le
+    # premier admin (CLI) : il a choisi son mot de passe lui-même.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
     # NULL uniquement pour le premier administrateur, créé par la CLI
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(

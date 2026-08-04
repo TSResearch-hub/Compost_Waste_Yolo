@@ -8,8 +8,9 @@ from sqlalchemy import delete, func, select
 from ..config import get_settings
 from ..deps import SESSION_COOKIE, get_current_user, get_db
 from ..models import AuthSession, User
-from ..schemas import LoginIn, UserOut
-from ..security import hash_token, new_session_token, utcnow, verify_password
+from ..schemas import ChangementMotDePasseIn, LoginIn, UserOut
+from ..security import (hash_password, hash_token, new_session_token, utcnow,
+                        verify_password)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -52,4 +53,27 @@ def logout(
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
+    return user
+
+
+@router.post("/changer-mot-de-passe", response_model=UserOut)
+def changer_mot_de_passe(
+    body: ChangementMotDePasseIn,
+    db=Depends(get_db),
+    user: User = Depends(get_current_user),
+    token: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+):
+    """Changement de SON PROPRE mot de passe (obligatoire à la première
+    connexion quand un administrateur l'a posé). L'actuel est exigé, et les
+    AUTRES sessions du compte sont révoquées : un mot de passe initial qui a
+    pu circuler ne doit laisser aucune session ouverte ailleurs."""
+    if not verify_password(user.password_hash, body.actuel):
+        raise HTTPException(status_code=400,
+                            detail="Mot de passe actuel incorrect")
+    user.password_hash = hash_password(body.nouveau)
+    user.must_change_password = False
+    courante = hash_token(token) if token else None
+    db.execute(delete(AuthSession).where(
+        AuthSession.user_id == user.id,
+        AuthSession.token_hash != courante))
     return user
