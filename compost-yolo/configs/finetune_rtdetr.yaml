@@ -24,6 +24,10 @@ lr0: 0.0002            # 1e-4 = référence du papier (batch 16, longs runs) ; m
 lrf: 0.05              # lr final = lr0 * lrf
 weight_decay: 0.0001
 warmup_epochs: 1
+warmup_bias_lr: 0.0    # OBLIGATOIRE avec un AdamW explicite : le défaut Ultralytics (0.1)
+                       # n'est neutralisé qu'avec optimizer=auto ; à 0.1, AdamW détruit les
+                       # biais de la tête pendant le warmup (mAP50 = 0.00007 après l'epoch 1,
+                       # run Colab du 11/09 22h14).
 cos_lr: true
 # freeze: 10           # gèle le backbone HGNetv2 (couches 0-9) ; option si le
                        # modèle dérive sur un petit pool. Non activé par défaut :
