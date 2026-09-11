@@ -16,8 +16,13 @@ un départ du pré-entraîné garantit que le test n'a jamais été appris.
 Usage :
     python scripts/update_dataset.py     # d'abord, si nouvelles annotations
     python scripts/retrain.py
-    python scripts/retrain.py --pretrain models/pretrain_rtdetr-l.pt --batch 4
+    python scripts/retrain.py --pretrain models/v0_pretrain_rtdetr-l.pt --batch 4
+    python scripts/retrain.py --pretrain rtdetr-l.pt   # départ COCO (ablation du pré-entraînement)
     python scripts/retrain.py --deploy   # déploie vers ../weights/ à la fin
+
+Les hyperparamètres viennent d'un YAML (--config) : par défaut
+configs/finetune_rtdetr.yaml si le nom des poids contient « rtdetr »,
+configs/finetune_yolo.yaml sinon.
 """
 
 import argparse
@@ -63,9 +68,13 @@ def main():
                          "défaut : data/captures/latest, sinon data/raw/captures")
     ap.add_argument("--workdir", default="data/finetune",
                     help="dossier de travail du split (défaut : data/finetune)")
-    ap.add_argument("--epochs", type=int, default=50)
-    ap.add_argument("--lr0", type=float, default=0.001)
-    ap.add_argument("--batch", type=int, default=8, help="baisser à 4 si mémoire GPU insuffisante")
+    ap.add_argument("--config", default=None,
+                    help="YAML d'hyperparamètres transmis à train.py (défaut : "
+                         "configs/finetune_rtdetr.yaml ou finetune_yolo.yaml selon les poids)")
+    ap.add_argument("--epochs", type=int, default=None, help="surcharge le YAML")
+    ap.add_argument("--lr0", type=float, default=None, help="surcharge le YAML")
+    ap.add_argument("--batch", type=int, default=None,
+                    help="surcharge le YAML (baisser si mémoire GPU insuffisante)")
     ap.add_argument("--device", help="cpu, 0... (défaut : auto)")
     ap.add_argument("--test-fraction", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=42)
@@ -83,8 +92,15 @@ def main():
 
     pretrain = ROOT / args.pretrain
     if not pretrain.exists():
-        sys.exit(f"Pré-entraîné introuvable : {pretrain}\n"
-                 "Copier le best.pt du pré-entraînement vers models/ (voir README).")
+        if Path(args.pretrain).suffix == ".pt" and "/" not in args.pretrain:
+            pretrain = Path(args.pretrain)   # nom Ultralytics (rtdetr-l.pt...) : téléchargé
+        else:
+            sys.exit(f"Pré-entraîné introuvable : {pretrain}\n"
+                     "Copier le best.pt du pré-entraînement vers models/ (voir README).")
+    is_rtdetr = "rtdetr" in Path(args.pretrain).name.lower()
+    config = args.config or ("configs/finetune_rtdetr.yaml" if is_rtdetr
+                             else "configs/finetune_yolo.yaml")
+    print(f"Hyperparamètres : {config}")
     if args.captures is None:
         latest = ROOT / "data/captures/latest"
         args.captures = "data/captures/latest" if latest.exists() else "data/raw/captures"
@@ -111,11 +127,14 @@ def main():
     # 4. fine-tuning (repart du pré-entraîné, learning rate bas)
     backup = (["--backup-dir", args.backup_dir, "--backup-every", str(args.backup_every)]
               if args.backup_dir else [])
-    run(["scripts/train.py", "--model", str(pretrain),
+    overrides = []
+    for key in ("epochs", "lr0", "batch"):
+        if getattr(args, key) is not None:
+            overrides += [f"--{key}", str(getattr(args, key))]
+    run(["scripts/train.py", "--model", str(pretrain), "--config", config,
          "--data", f"{workdir}/dataset_finetune/data.yaml",
-         "--epochs", str(args.epochs), "--lr0", str(args.lr0),
-         "--batch", str(args.batch), "--run-prefix", "finetune",
-         "--runs-dir", args.runs_dir] + device + backup)
+         "--run-prefix", "finetune", "--runs-dir", args.runs_dir]
+        + overrides + device + backup)
     best = latest_best(args.runs_dir, "finetune")
 
     # 5. éval APRÈS (même test)

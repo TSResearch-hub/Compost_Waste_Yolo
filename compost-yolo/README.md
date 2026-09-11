@@ -66,8 +66,14 @@ python scripts/update_dataset.py                         # ou --source poste1/ p
 
 # 2. Réentraîner sur le dernier snapshot : split (test compost préservé) -> éval AVANT
 #    -> fine-tuning -> éval APRÈS -> comparaison. --deploy copie le best.pt vers l'interface.
-python scripts/retrain.py                                # options : --epochs, --batch 4, --deploy
+python scripts/retrain.py                                # options : --config, --epochs, --batch 4, --deploy
 ```
+
+Les hyperparamètres du fine-tuning sont dans `configs/finetune_rtdetr.yaml`
+(poids RT-DETR) ou `configs/finetune_yolo.yaml` (poids YOLO), choisis d'après
+le nom des poids ; `--config` force un autre YAML. **Tout le YAML est transmis
+à Ultralytics** — en particulier `optimizer` doit être explicite : avec
+`optimizer: auto` (défaut Ultralytics), `lr0` est ignoré et recalculé.
 
 ### Interface graphique (pour non-initiés)
 
@@ -89,7 +95,7 @@ Les runs sont nommés par rôle : `runs/pretrain_*` (datasets externes),
 (évaluations, le JSON contient le chemin exact des poids évalués).
 
 Chaque étape reste un script utilisable seul (`split_captures.py`,
-`prepare_dataset.py`, `train.py --model ... --lr0 0.001 --run-prefix finetune`,
+`prepare_dataset.py`, `train.py --model ... --config configs/finetune_rtdetr.yaml --run-prefix finetune`,
 `evaluate.py`) : `retrain.py` ne fait que les enchaîner — voir son `--help`.
 
 ### RT-DETR (alternative à YOLO)
@@ -108,6 +114,13 @@ Les images d'une même session de capture (même compost, même éclairage) sont
 quasi identiques. Un split aléatoire par image mettrait des quasi-doublons en
 train ET en test → métriques faussement bonnes. `prepare_dataset.py` répartit
 donc des **sessions entières** entre train/val/test.
+
+Même règle pour le **val** du fine-tuning : `split_captures.py` écrit dans le
+pool un `groups.csv` (une image → sa disposition), et `prepare_dataset.py`
+répartit donc des dispositions entières entre train et val. Ce n'est pas
+cosmétique : Ultralytics choisit l'epoch retenu comme `best.pt` sur le val ; un
+val contaminé par des vues quasi identiques du train sélectionne l'epoch qui
+mémorise le mieux, pas celui qui généralise.
 
 Les noms de fichiers (`cap_{timestamp_unix}.jpg`) ne contiennent pas
 d'identifiant de session, donc les sessions sont reconstruites :

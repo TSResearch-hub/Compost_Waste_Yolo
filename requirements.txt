@@ -1,5 +1,5 @@
 streamlit==1.40.0
-ultralytics
+ultralytics==8.4.107   # même version que compost-yolo/pyproject.toml (résultats reproductibles)
 opencv-python-headless
 Pillow
 numpy

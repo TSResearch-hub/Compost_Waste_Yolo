@@ -5,6 +5,7 @@ L'année et les secondes sont volontairement omises (lisibilité) ; en cas de
 collision dans la même minute, un suffixe ``-2``, ``-3``... est ajouté.
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -35,5 +36,7 @@ def weights_kind(weights):
     """
     p = Path(str(weights)).resolve()
     name = p.parent.parent.name if p.parent.name == "weights" else p.stem
-    kind = name.split("_")[0].split("-")[0].lower()
-    return kind if kind in ("pretrain", "finetune", "train") else "model"
+    # premier jeton reconnu, où qu'il soit dans le nom : v0_pretrain_rtdetr-l,
+    # v2_finetune_rtdetr-l_snapshot-v003, pretrain-rtdetr-l, finetune_08-07_10h12
+    tokens = re.split(r"[_-]", name.lower())
+    return next((t for t in tokens if t in ("pretrain", "finetune", "train")), "model")

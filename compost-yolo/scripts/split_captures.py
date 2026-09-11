@@ -21,9 +21,10 @@ côte, à survoler).
 Split STRATIFIÉ par session (groups.csv du snapshot fait foi) : ~--test-fraction
 des images de CHAQUE session part au test, par dispositions entières.
 
-Le pool de fine-tuning est laissé SANS groups.csv : prepare_dataset.py y fera un
-split train/val PAR IMAGE (la contamination train/val n'a pas d'importance :
-la seule mesure honnête est captures_test).
+Le pool de fine-tuning reçoit un groups.csv (stem -> DISPOSITION) : prepare_dataset.py
+y fait donc un split train/val PAR DISPOSITION. Ce n'est pas un luxe : Ultralytics
+choisit l'epoch retenu comme best.pt sur le val — un val contaminé par des vues
+quasi identiques du train sélectionne l'epoch qui mémorise, pas celui qui généralise.
 
 Usage :
     python scripts/split_captures.py --source data/captures/latest --output data/finetune
@@ -224,6 +225,14 @@ def main():
         if lbl.exists():
             shutil.copy(lbl, lbl_dir / lbl.name)
 
+    # groups.csv du pool : prepare_dataset.py splittera train/val par disposition
+    with open(ft / "groups.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["stem", "group_id"])
+        for img in images:
+            if assign[dispo_of[img]] == "finetune":
+                w.writerow([img.stem, dispo_of[img]])
+
     # 4. data.yaml du test + audit
     names = yaml.safe_load(open(ROOT / "configs/data.yaml", encoding="utf-8"))["names"]
     with open(te / "data.yaml", "w", encoding="utf-8") as f:
@@ -248,6 +257,12 @@ def main():
         n_lbl = sum(1 for _ in dest[sub][1].glob("*.txt"))
         detail = ", ".join(f"{s}:{counts[(s, sub)]}" for s in order if counts[(s, sub)])
         print(f"  {sub:9s}: {n_img} images, {n_lbl} labels  ({detail})")
+    unknown = sum(1 for i in images if session_of_dispo[dispo_of[i]] == "?")
+    if unknown:
+        print(f"  ATTENTION : {unknown} image(s) absente(s) de groups.csv (session '?') : "
+              "stratification impossible pour elles. Si ce sont des copies (_dupN...) "
+              "d'images existantes, original et copie peuvent tomber de part et d'autre "
+              "du split (fuite train/test). Ne pas entraîner sur ce snapshot en l'état.")
     multi = sum(1 for imgs in dispo_images.values() if len(imgs) > 1)
     print(f"  appariement : {n_paired} photo(s) téléphone rattachée(s) à "
           f"{multi} disposition(s) webcam (fenêtre {args.pair_window:.0f}s) ; "

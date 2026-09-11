@@ -1,0 +1,43 @@
+# Fine-tuning RT-DETR-l sur les captures réelles (retrain.py / train.py --config).
+# Tout ce fichier (sauf `model`) est transmis tel quel à Ultralytics.
+# Valeurs de référence : papier RT-DETR (AdamW, lr 1e-4, weight decay 1e-4).
+# Ce qui a été mesuré sur les runs de juillet 2026 et motive ces choix :
+#  - 'optimizer: auto' IGNORE lr0 (lr réel 8.3e-4, ~8x trop haut sur ~700 images) ;
+#  - le meilleur epoch arrivait avant l'epoch 10-17 : patience 20 ne servait à rien ;
+#  - box/cls/dfl n'ont AUCUN effet sur RT-DETR (poids de perte codés en dur).
+
+model: rtdetr-l.pt     # surchargé par retrain.py --pretrain / train.py --model
+epochs: 30
+imgsz: 640
+batch: 4               # RT-DETR-l : 4 tient sur 8 Go de VRAM (mosaïque à 1280 px)
+seed: 42
+cache: ram             # images redimensionnées gardées en RAM (~1 Go pour 1000 images) :
+                       # sans cache, les JPEG 4000x3000 sont décodés à chaque epoch
+                       # (~1000 s/epoch mesurés en local sous WSL2, contre ~60 s sur Colab)
+patience: 8            # early stopping : epochs sans amélioration
+
+# --- optimisation ---------------------------------------------------------
+optimizer: AdamW       # explicite : 'auto' écraserait lr0
+lr0: 0.0001
+lrf: 0.05              # lr final = lr0 * lrf
+weight_decay: 0.0001
+warmup_epochs: 1
+cos_lr: true
+# freeze: 10           # gèle le backbone HGNetv2 (couches 0-9) ; option si le
+                       # modèle dérive sur un petit pool. Non activé par défaut :
+                       # le pré-entraîné a déjà adapté le backbone aux déchets.
+amp: true              # RT-DETR + AMP peut logger des val/*_loss NaN (documenté
+                       # Ultralytics) ; sans effet sur les poids ni sur best.pt
+                       # (choisi sur le mAP). amp: false => batch 2 sur 8 Go.
+
+# --- augmentation ---------------------------------------------------------
+# Le banc benchmark_lumiere.py a montré que la balance des blancs et
+# l'exposition n'étaient pas couvertes par les défauts (hsv_h 0.015, hsv_v 0.4).
+hsv_h: 0.03
+hsv_s: 0.7
+hsv_v: 0.5
+mosaic: 0.5            # 1.0 par défaut : décalage de distribution trop violent
+close_mosaic: 10       # sur un petit pool (chute de perte brutale à sa coupure)
+fliplr: 0.5
+scale: 0.5
+translate: 0.1

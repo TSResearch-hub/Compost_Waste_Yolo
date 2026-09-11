@@ -129,11 +129,11 @@ def main():
 
     # data.yaml consommé par train.py / evaluate.py (chemin absolu : pas de
     # dépendance au datasets_dir global d'Ultralytics)
-    data_yaml = {
-        "path": str(output.resolve()),
-        "train": "images/train", "val": "images/val", "test": "images/test",
-        "names": dict(enumerate(class_names)),
-    }
+    # Ne déclarer que les splits non vides : une clé 'test' vers un dossier vide
+    # (ratio 0) ferait échouer `evaluate.py --split test` sans explication.
+    data_yaml = {"path": str(output.resolve())}
+    data_yaml.update({s: f"images/{s}" for s in ("train", "val", "test") if n_images[s] > 0})
+    data_yaml["names"] = dict(enumerate(class_names))
     with open(output / "data.yaml", "w", encoding="utf-8") as f:
         yaml.safe_dump(data_yaml, f, sort_keys=False, allow_unicode=True)
 
