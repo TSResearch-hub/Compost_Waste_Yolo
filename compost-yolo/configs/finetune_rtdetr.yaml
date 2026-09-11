@@ -7,7 +7,7 @@
 #  - box/cls/dfl n'ont AUCUN effet sur RT-DETR (poids de perte codés en dur).
 
 model: rtdetr-l.pt     # surchargé par retrain.py --pretrain / train.py --model
-epochs: 30
+epochs: 40             # patience 8 coupe avant si le val stagne
 imgsz: 640
 batch: 4               # RT-DETR-l : 4 tient sur 8 Go de VRAM (mosaïque à 1280 px)
 seed: 42
@@ -18,7 +18,9 @@ patience: 8            # early stopping : epochs sans amélioration
 
 # --- optimisation ---------------------------------------------------------
 optimizer: AdamW       # explicite : 'auto' écraserait lr0
-lr0: 0.0001
+lr0: 0.0002            # 1e-4 = référence du papier (batch 16, longs runs) ; mesuré ici :
+                       # à 1e-4 la convergence est trop lente pour ~40 epochs à batch 4,
+                       # à 8.3e-4 (run v2) le pic arrive dès l'epoch 8 puis le val se dégrade.
 lrf: 0.05              # lr final = lr0 * lrf
 weight_decay: 0.0001
 warmup_epochs: 1

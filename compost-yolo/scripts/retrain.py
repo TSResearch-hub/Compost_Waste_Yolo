@@ -40,6 +40,24 @@ def run(cmd):
         sys.exit(f"Échec de l'étape : {cmd[0]}")
 
 
+def is_rtdetr_weights(weights):
+    """Architecture lue dans le checkpoint, pas dans le nom du fichier.
+
+    Un best.pt copié depuis un run (Drive, runs/...) s'appelle juste best.pt :
+    se fier au nom ferait tomber un RT-DETR sur la recette YOLO (SGD, lr 0.01)
+    sans aucun message — c'est arrivé le 11/09/2026.
+    """
+    weights = Path(weights)
+    if "rtdetr" in weights.name.lower():
+        return True
+    if not weights.exists():          # nom Ultralytics (yolov8n.pt...) : téléchargé plus tard
+        return False
+    import torch
+    ckpt = torch.load(weights, map_location="cpu", weights_only=False)
+    model = ckpt.get("ema") or ckpt.get("model")
+    return "RTDETR" in type(model).__name__
+
+
 def latest_best(runs_dir, prefix):
     runs = sorted((ROOT / runs_dir).glob(f"{prefix}_*/weights/best.pt"),
                   key=lambda p: p.stat().st_mtime)
@@ -97,8 +115,7 @@ def main():
         else:
             sys.exit(f"Pré-entraîné introuvable : {pretrain}\n"
                      "Copier le best.pt du pré-entraînement vers models/ (voir README).")
-    is_rtdetr = "rtdetr" in Path(args.pretrain).name.lower()
-    config = args.config or ("configs/finetune_rtdetr.yaml" if is_rtdetr
+    config = args.config or ("configs/finetune_rtdetr.yaml" if is_rtdetr_weights(pretrain)
                              else "configs/finetune_yolo.yaml")
     print(f"Hyperparamètres : {config}")
     if args.captures is None:
