@@ -1,4 +1,7 @@
 fastapi>=0.115
+# Formulaires multipart (POST /api/sync/upload : fichier + champs) — FastAPI
+# ne l'installe pas tout seul, l'application refuse de démarrer sans lui.
+python-multipart>=0.0.20
 uvicorn[standard]>=0.30
 SQLAlchemy>=2.0.41
 alembic>=1.16
