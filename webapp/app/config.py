@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     # problème de worker, pas d'images — il ne doit pas brûler la file
     worker_max_consecutive_failures: int = 5
 
+    # ── Flotte Jetson (routeur sync) ─────────────────────────────────────────
+    # Jeton partagé présenté par les cartes (Authorization: Bearer … ou champ
+    # de formulaire `token`). Absent = réception désactivée : POST
+    # /api/sync/upload répond 503. À générer long et aléatoire (ex.
+    # `python -c "import secrets; print(secrets.token_urlsafe(32))"`).
+    sync_token: str | None = None
+    # Gardes contre les envois pathologiques : taille max du ZIP reçu, et
+    # taille max une fois décompressé (Mo) — au-delà, 413 et rien n'est écrit
+    sync_max_upload_mb: int = 512
+    sync_max_unzipped_mb: int = 2048
+
 
 @lru_cache
 def get_settings() -> Settings:

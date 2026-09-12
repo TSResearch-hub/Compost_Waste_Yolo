@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .routers import (auth, batches, exports, images, imports, preannotation,
-                      sessions, users)
+from .routers import (auth, batches, exports, images, imports, jetsons,
+                      preannotation, sessions, sync, users)
 
 # Build du front (webapp/frontend, `npm run build`) — servi par le même
 # process, même origine : le cookie de session suffit, pas de CORS.
@@ -22,6 +22,10 @@ def create_app() -> FastAPI:
     app.include_router(images.router)
     app.include_router(exports.router)
     app.include_router(preannotation.router)
+    # Flotte Jetson : registre des cartes (admin) et réception des envois
+    # automatiques (jeton partagé, pas de cookie — voir routers/sync.py)
+    app.include_router(jetsons.router)
+    app.include_router(sync.router)
 
     @app.get("/api/health", tags=["meta"])
     def health():

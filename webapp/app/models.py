@@ -64,6 +64,23 @@ PREANNOTATION_ERROR_KINDS = (
     "invariant_viole",
 )
 
+# Identifiant de carte Jetson (adresse MAC ou tout identifiant stable choisi
+# côté carte) : minuscules, chiffres, `_ . -`, 100 caractères max. Pas de `:` :
+# l'identifiant sert de source_label (préfixe possible d'export_filename) et
+# de préfixe du nom de session par défaut (préfixe possible de fichier à
+# l'export) — il doit rester un nom de fichier valide partout, Windows compris.
+# Même règle dans le CHECK `identifiant_valide` de jetson_devices.
+JETSON_ID_REGEX = r"^[a-z0-9_.-]{1,100}$"
+
+
+def normaliser_jetson_id(brut: str) -> str:
+    """Forme canonique d'un identifiant de carte : espaces retirés, minuscules,
+    `:` → `-`. Une adresse MAC est insensible à la casse et s'écrit aussi bien
+    48:B0:2D:3E:AA:01 que 48-b0-2d-3e-aa-01 : les deux désignent la même carte.
+    Ne valide pas — voir JETSON_ID_REGEX."""
+    return brut.strip().lower().replace(":", "-")
+
+
 # Transitions de statut autorisées — la même liste est gravée dans le trigger
 # CW002 (migration 0001, remplacé par 0004) ; toute évolution doit toucher
 # les deux.
@@ -106,7 +123,8 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false")
     )
-    # NULL uniquement pour le premier administrateur, créé par la CLI
+    # NULL pour le premier administrateur (créé par la CLI) et pour le compte
+    # système `sync_jetson` (créé à la volée au premier envoi d'une carte)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -137,11 +155,35 @@ class AuthSession(Base):
     )
 
 
+class JetsonDevice(Base):
+    """Carte Jetson de la flotte de capture, identifiée par son adresse MAC
+    normalisée (ou tout identifiant stable — voir normaliser_jetson_id).
+    Déclarée par un administrateur AVANT son premier envoi :
+    POST /api/sync/upload refuse toute carte inconnue ou désactivée
+    (`is_active` faux = carte retirée du service, ses sessions restent)."""
+
+    __tablename__ = "jetson_devices"
+    __table_args__ = (
+        CheckConstraint(f"id ~ '{JETSON_ID_REGEX}'", name="identifiant_valide"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class CaptureSession(Base):
     """Session de capture (jour/conditions de prise de vue) — PAS une session
     web. C'est l'unité du split train/val/test."""
 
     __tablename__ = "sessions"
+    __table_args__ = (Index("ix_sessions_jetson", "jetson_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     name: Mapped[str] = mapped_column(Text, unique=True)
@@ -152,6 +194,10 @@ class CaptureSession(Base):
     # Texte libre : l'opérateur terrain n'a pas forcément de compte
     operator: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Carte Jetson qui a OUVERT la session par envoi automatique
+    # (POST /api/sync/upload) ; NULL pour les imports manuels (CLI, écran
+    # Technique). Un rattachement ultérieur ne le modifie pas.
+    jetson_id: Mapped[str | None] = mapped_column(ForeignKey("jetson_devices.id"))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

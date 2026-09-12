@@ -2,9 +2,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from .models import ROLES
+from .models import JETSON_ID_REGEX, ROLES, normaliser_jetson_id
 from .security import PASSWORD_MIN_LENGTH
 
 Role = Literal[*ROLES]
@@ -53,3 +53,39 @@ class ChangementMotDePasseIn(BaseModel):
 
     actuel: str = Field(min_length=1)
     nouveau: str = Field(min_length=PASSWORD_MIN_LENGTH)
+
+
+# ── Flotte Jetson ─────────────────────────────────────────────────────────────
+
+class JetsonOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    name: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class JetsonCreate(BaseModel):
+    """Déclaration d'une carte par un administrateur — préalable à tout envoi.
+    L'identifiant est normalisé (minuscules, `:` → `-`) AVANT validation :
+    `48:B0:2D:3E:AA:01` et `48-b0-2d-3e-aa-01` désignent la même carte."""
+
+    id: str = Field(pattern=JETSON_ID_REGEX)
+    name: str | None = None
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _normaliser(cls, v):
+        return normaliser_jetson_id(v) if isinstance(v, str) else v
+
+
+class JetsonPatch(BaseModel):
+    """Champs modifiables par un administrateur. Tous optionnels — `name` ne
+    compte que s'il est présent dans le corps (null explicite = effacer le
+    nom). `is_active` faux : la carte est refusée à l'envoi, ses sessions
+    et images restent."""
+
+    name: str | None = None
+    is_active: bool | None = None

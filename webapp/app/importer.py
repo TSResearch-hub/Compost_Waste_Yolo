@@ -19,6 +19,7 @@ recadrage partage naturellement le même fichier original.
 """
 import fnmatch
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -28,13 +29,15 @@ from PIL import Image as PILImage
 from sqlalchemy import select
 
 from .classes import class_count
-from .models import Annotation, Batch, CaptureSession, Image, ImageStatusEvent, User
+from .models import (JETSON_ID_REGEX, Annotation, Batch, CaptureSession, Image,
+                     ImageStatusEvent, User, normaliser_jetson_id)
 from .security import hash_password
 from .storage import Storage
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 DEFAULT_BATCH_NAME = "import"
 HISTORICAL_USERNAME = "import_historique"
+SYNC_USERNAME = "sync_jetson"
 
 
 @dataclass
@@ -131,6 +134,8 @@ def import_session_folder(
     operator: str | None = None,
     notes: str | None = None,
     attach_existing: bool = False,
+    source_label: str | None = None,
+    jetson_id: str | None = None,
 ) -> ImportReport:
     """Un import = UNE session, éventuellement plusieurs dossiers sources (un
     par poste de capture) : trois postes qui photographient le même tas au
@@ -140,7 +145,13 @@ def import_session_folder(
 
     `attach_existing=True` rattache les images à la session `name` déjà en
     base (cas nominal d'un poste importé après coup) : les paramètres de
-    session sont alors refusés — la session existante n'est pas modifiée."""
+    session sont alors refusés — la session existante n'est pas modifiée.
+
+    `source_label` impose le libellé de poste à TOUS les dossiers (défaut :
+    le nom de chaque dossier) — un envoi de carte Jetson est un seul poste,
+    quel que soit le nom du dossier temporaire où il a été décompressé.
+    `jetson_id` (carte déclarée) est posé sur la session CRÉÉE ; en
+    rattachement il est ignoré, la session existante gardant son origine."""
     report = ImportReport(session_name=name)
     sources = [Path(s) for s in source_dirs]
     if not sources:
@@ -171,7 +182,7 @@ def import_session_folder(
     candidates: list[tuple[Path, str, int, int, str]] = []  # + label du poste
     seen: dict[str, str] = {}
     for source in sources:
-        label = source.name
+        label = source_label or source.name
         for path in sorted(p for p in source.iterdir() if p.is_file()):
             if path.suffix.lower() not in IMAGE_EXTENSIONS:
                 report.rejected.append((path.name, "extension non supportée"))
@@ -233,7 +244,8 @@ def import_session_folder(
             session = CaptureSession(
                 name=name, captured_on=captured_on, lighting=lighting,
                 camera_height_cm=camera_height_cm, compost_state=compost_state,
-                operator=operator, notes=notes, created_by=admin_id,
+                operator=operator, notes=notes, jetson_id=jetson_id,
+                created_by=admin_id,
             )
             db.add(session)
             db.flush()
@@ -278,6 +290,85 @@ def import_session_folder(
             storage.delete(rel, missing_ok=True)
         raise
     return report
+
+
+# ═══ Envois automatiques des cartes Jetson (routeur sync) ════════════════════
+# Une carte déclarée (jetson_devices, active) envoie un ZIP d'images ; le
+# routeur le décompresse dans un dossier temporaire et appelle
+# import_jetson_upload. Aucun administrateur n'est dans la boucle : sessions,
+# lots et événements sont portés par le compte système INACTIF `sync_jetson`
+# (même mécanisme que `import_historique`). Un envoi = un poste de capture dont
+# le source_label est l'identifiant de la carte ; la session cible est
+# `{jetson_id}_{date}` par défaut, créée au premier envoi du jour (elle porte
+# jetson_id) et REJOINTE par les envois suivants — une carte qui envoie toutes
+# les heures ne doit pas ouvrir 24 sessions, et les doublons (ré-envoi après
+# coupure réseau) sont ignorés comme pour tout import.
+
+
+def _ensure_sync_user(db) -> int:
+    """Compte système inactif qui porte created_by/changed_by des écritures
+    issues des cartes — la traçabilité exige un auteur, et ce n'est aucun
+    humain. created_by NULL : personne ne l'a créé."""
+    user = db.scalar(select(User).where(User.username == SYNC_USERNAME))
+    if user is None:
+        user = User(
+            username=SYNC_USERNAME,
+            # mot de passe aléatoire jamais communiqué : compte inactif,
+            # présent uniquement pour porter la traçabilité des FK
+            password_hash=hash_password(secrets.token_urlsafe(24)),
+            display_name="Synchronisation Jetson",
+            role="annotateur",
+            is_active=False,
+            created_by=None,
+        )
+        db.add(user)
+        db.flush()
+    return user.id
+
+
+def import_jetson_upload(
+    db,
+    storage: Storage,
+    *,
+    source_dir: Path | str,
+    jetson_id: str,
+    session_name: str | None = None,
+    captured_on: date | None = None,
+    notes: str | None = None,
+) -> ImportReport:
+    """Importe le contenu (déjà décompressé, à plat) d'un envoi de carte.
+
+    Cible : `session_name` s'il est fourni, sinon `{jetson_id}_{captured_on}`
+    (`captured_on` = date du jour côté serveur par défaut — la carte a
+    intérêt à l'envoyer elle-même, une capture autour de minuit changerait de
+    session selon le fuseau du serveur). Session absente : créée, avec
+    jetson_id ; présente : rejointe telle quelle (rattachement, paramètres
+    de session ignorés), qu'elle vienne de la même carte, d'une autre ou
+    d'un import manuel — des postes qui photographient la même matière au
+    même moment DOIVENT partager une session (split train/test).
+
+    La carte n'est pas vérifiée ici (existence, activation) : c'est le rôle
+    du routeur, avant toute décompression. ValueError sur identifiant
+    invalide ou dossier introuvable, comme import_session_folder."""
+    jetson_id = normaliser_jetson_id(jetson_id)
+    if not re.fullmatch(JETSON_ID_REGEX, jetson_id):
+        raise ValueError(f"identifiant de carte invalide : « {jetson_id} »")
+    if captured_on is None:
+        captured_on = date.today()
+    name = session_name or f"{jetson_id}_{captured_on.isoformat()}"
+    existante = db.scalar(
+        select(CaptureSession.id).where(CaptureSession.name == name))
+    importer_id = _ensure_sync_user(db)
+    if existante is not None:
+        return import_session_folder(
+            db, storage, source_dirs=[source_dir], admin_id=importer_id,
+            name=name, attach_existing=True, source_label=jetson_id,
+        )
+    return import_session_folder(
+        db, storage, source_dirs=[source_dir], admin_id=importer_id,
+        name=name, captured_on=captured_on, notes=notes,
+        source_label=jetson_id, jetson_id=jetson_id,
+    )
 
 
 # ═══ Reprise historique (dataset_recolte) — à session explicite ══════════════

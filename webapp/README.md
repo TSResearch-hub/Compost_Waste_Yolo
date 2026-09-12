@@ -74,7 +74,8 @@ transitions autorisées existe en deux exemplaires
 (`models.IMAGE_STATUS_TRANSITIONS` et le trigger) — toute évolution doit
 toucher les deux (`test_transitions_whitelist` les compare paire par paire).
 `0003` ajoute `users.must_change_password` ; `0004` remplace le trigger CW002
-pour y faire entrer `en_cours → relue` (relecture — voir plus bas).
+pour y faire entrer `en_cours → relue` (relecture — voir plus bas) ; `0005`
+crée `jetson_devices` et `sessions.jetson_id` (flotte Jetson — voir plus bas).
 
 ## Premier administrateur, puis comptes
 
@@ -152,6 +153,46 @@ Comportement :
 L'import crée la session, un lot par défaut « import » (backlog à découper en
 lots de N depuis l'écran des lots) et les images en
 `en_attente_preannotation`, chacune avec son événement de traçabilité.
+
+## Flotte Jetson — envois automatiques
+
+Les cartes Jetson déposent elles-mêmes leurs captures : `POST /api/sync/upload`
+reçoit un ZIP d'images et l'importe comme un poste de capture. Pas de cookie :
+la carte présente le **jeton partagé** `SYNC_TOKEN` (`Authorization: Bearer …`
+ou champ `token`) et son **identifiant** (`X-Jetson-Id` ou champ `jetson_id`),
+normalisé (minuscules, `:` → `-` : la MAC `48:B0:2D:3E:AA:01` devient
+`48-b0-2d-3e-aa-01`). La carte doit avoir été **déclarée par un
+administrateur** : `POST /api/jetsons` (`id`, `name`), `GET /api/jetsons`,
+`PATCH /api/jetsons/{id}` (`name`, `is_active`) — carte inconnue ou
+désactivée : 403 ; `SYNC_TOKEN` absent : 503, réception coupée. Pas de
+suppression : désactiver retire la carte du service, ses sessions restent.
+
+```bash
+curl -sS -X POST https://VPS/api/sync/upload \
+  -H "Authorization: Bearer $SYNC_TOKEN" \
+  -H "X-Jetson-Id: $(cat /sys/class/net/eth0/address)" \
+  -F captured_on=2026-09-12 -F archive=@captures.zip
+```
+
+Comportement :
+- le ZIP est décompressé **à plat** dans un dossier temporaire (entrées
+  imbriquées préfixées `dossier__nom.jpg`, `__MACOSX` et fichiers cachés
+  ignorés, `..` refusé : 400), puis le dossier est supprimé, succès ou échec ;
+  plafonds `SYNC_MAX_UPLOAD_MB` / `SYNC_MAX_UNZIPPED_MB` (413) ;
+- session cible : `session_name` s'il est fourni, sinon
+  `{jetson_id}_{captured_on}` (`captured_on` : date du jour côté serveur par
+  défaut — la carte a intérêt à l'envoyer, une capture autour de minuit
+  changerait de session selon le fuseau du serveur) ; **créée** au premier
+  envoi (elle porte `sessions.jetson_id`), **rejointe** ensuite : une carte
+  qui envoie toutes les heures alimente la session du jour, un ré-envoi après
+  coupure réseau ne produit que des doublons ignorés (tout en doublon :
+  409 + rapport) ;
+- `source_label` = identifiant de la carte ; `created_by` / `changed_by` =
+  compte système inactif `sync_jetson` (même mécanisme qu'`import_historique`),
+  aucun administrateur n'étant dans la boucle ;
+- réponse 201 + rapport d'import (créées / doublons / rejetées), identique à
+  `POST /api/imports` ; 409 simple si deux envois de la même carte se croisent
+  à la création de la session du jour (réessayer : rattachement).
 
 ## Assignation, verrou, découpage
 
