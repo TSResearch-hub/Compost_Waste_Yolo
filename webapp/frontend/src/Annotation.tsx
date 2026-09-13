@@ -23,7 +23,10 @@
  * - relecture (annotateur confirmé ou administrateur, image annotée par
  *   quelqu'un d'autre) : corriger ou valider en l'état — l'image passe
  *   « relue ». Ponctuelle et facultative, jamais une étape obligatoire ;
- * - guide d'annotation intégré (G), filtre de la liste par statut et classe.
+ * - guide d'annotation intégré (G), filtre de la liste par statut et classe ;
+ * - réglages d'affichage (opacité, bordure, lumière, contraste, surlignage,
+ *   rejetées, pleine résolution) mémorisés dans le navigateur d'une session
+ *   à l'autre (localStorage, clés `cw_prefs_*`).
  */
 import { useCallback, useEffect, useRef, useState } from "react"
 import useImage from "use-image"
@@ -43,6 +46,7 @@ import {
 } from "./boxes"
 import Canvas from "./Canvas"
 import Guide from "./Guide"
+import { useLocalStorage } from "./useLocalStorage"
 
 const HISTORIQUE_MAX = 100
 
@@ -98,14 +102,15 @@ export default function Annotation({ moi, lotId, lotNom, onRetour, surErreurAuth
     boxes: BoxItem[]
   } | null>(null)
 
-  // réglages d'affichage
-  const [opacite, setOpacite] = useState(1.0)
-  const [epaisseur, setEpaisseur] = useState(2)
-  const [lumiere, setLumiere] = useState(0)
-  const [contraste, setContraste] = useState(0)
-  const [highlight, setHighlight] = useState(false)
-  const [montrerRejetees, setMontrerRejetees] = useState(false)
-  const [pleineResolution, setPleineResolution] = useState(false)
+  // réglages d'affichage — persistés dans le navigateur (clés cw_prefs_*) ;
+  // les valeurs par défaut s'appliquent tant que rien n'a été enregistré
+  const [opacite, setOpacite] = useLocalStorage("opacite", 1.0)
+  const [epaisseur, setEpaisseur] = useLocalStorage("epaisseur", 2)
+  const [lumiere, setLumiere] = useLocalStorage("lumiere", 0)
+  const [contraste, setContraste] = useLocalStorage("contraste", 0)
+  const [highlight, setHighlight] = useLocalStorage("highlight", false)
+  const [montrerRejetees, setMontrerRejetees] = useLocalStorage("montrer_rejetees", false)
+  const [pleineResolution, setPleineResolution] = useLocalStorage("pleine_resolution", false)
 
   // chrono par image
   const [ouvertA, setOuvertA] = useState<number>(Date.now())
