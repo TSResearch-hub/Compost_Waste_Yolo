@@ -54,6 +54,17 @@ export interface Utilisateur {
   created_at: string
 }
 
+// carte de la flotte de capture — identifiant normalisé par le serveur
+// (minuscules, `:` → `-`) ; jamais supprimée : is_active faux = retirée du
+// service, ses envois sont refusés, ses sessions restent
+export interface Jetson {
+  id: string
+  name: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Lot {
   id: number
   session_id: number
@@ -210,6 +221,14 @@ export const api = {
     id: number,
     corps: Partial<{ is_active: boolean; role: string; display_name: string | null; password: string }>,
   ) => appel<Utilisateur>("PATCH", `/api/users/${id}`, corps),
+
+  // flotte Jetson — administrateur uniquement. Une carte doit être déclarée
+  // ici avant son premier envoi (POST /api/sync/upload refuse les inconnues)
+  jetsons: () => appel<Jetson[]>("GET", "/api/jetsons"),
+  creerJetson: (id: string, name: string | null) =>
+    appel<Jetson>("POST", "/api/jetsons", { id, name }),
+  modifierJetson: (id: string, corps: Partial<{ is_active: boolean; name: string | null }>) =>
+    appel<Jetson>("PATCH", `/api/jetsons/${encodeURIComponent(id)}`, corps),
 
   lots: () => appel<Lot[]>("GET", "/api/batches"),
   assignerLot: (lotId: number, userId: number) =>

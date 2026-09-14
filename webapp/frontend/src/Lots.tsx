@@ -1,8 +1,8 @@
 /** Liste des lots : les miens d'abord (annotation), tous ensuite. Pour un
  * administrateur : découpage en lots de N (round-robin entre postes côté
  * serveur), assignation à un compte actif, libération forcée, court-circuit
- * de la file de pré-annotation — plus les entrées vers les écrans Comptes et
- * Technique. */
+ * de la file de pré-annotation — plus les entrées vers les écrans Comptes,
+ * Matériel (flotte Jetson) et Technique. */
 import { useCallback, useEffect, useState } from "react"
 
 import { api, type Lot, type Moi, type Utilisateur } from "./api"
@@ -11,6 +11,7 @@ interface Props {
   moi: Moi
   onOuvrirLot: (lotId: number, lotNom: string) => void
   onOuvrirComptes: () => void
+  onOuvrirFlotte: () => void
   onOuvrirTechnique: () => void
   onDeconnexion: () => void
   surErreurAuth: (e: unknown) => boolean
@@ -28,6 +29,7 @@ export default function Lots({
   moi,
   onOuvrirLot,
   onOuvrirComptes,
+  onOuvrirFlotte,
   onOuvrirTechnique,
   onDeconnexion,
   surErreurAuth,
@@ -282,6 +284,9 @@ export default function Lots({
             <>
               <button className="btn btn-petit" onClick={onOuvrirComptes}>
                 Comptes
+              </button>
+              <button className="btn btn-petit" onClick={onOuvrirFlotte}>
+                Matériel
               </button>
               <button className="btn btn-petit" onClick={onOuvrirTechnique}>
                 Technique

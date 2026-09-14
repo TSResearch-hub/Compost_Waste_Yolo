@@ -1,12 +1,13 @@
 /** Aiguillage : login → (changement de mot de passe imposé) → lots →
- * annotation, plus les écrans administrateur (comptes, technique). Pas de
- * routeur — des vues, un état. La session vit dans le cookie HttpOnly ; au
- * chargement on demande simplement au serveur qui on est. */
+ * annotation, plus les écrans administrateur (comptes, matériel, technique).
+ * Pas de routeur — des vues, un état. La session vit dans le cookie HttpOnly ;
+ * au chargement on demande simplement au serveur qui on est. */
 import { useCallback, useEffect, useState } from "react"
 
 import { api, ApiError, type Moi } from "./api"
 import Annotation from "./Annotation"
 import Comptes from "./Comptes"
+import Flotte from "./Flotte"
 import Login from "./Login"
 import Lots from "./Lots"
 import MotDePasse from "./MotDePasse"
@@ -18,6 +19,7 @@ type Vue =
   | { nom: "lots" }
   | { nom: "annotation"; lotId: number; lotNom: string }
   | { nom: "comptes" }
+  | { nom: "flotte" }
   | { nom: "technique" }
 
 export default function App() {
@@ -77,6 +79,7 @@ export default function App() {
         moi={moi}
         onOuvrirLot={(lotId, lotNom) => setVue({ nom: "annotation", lotId, lotNom })}
         onOuvrirComptes={() => setVue({ nom: "comptes" })}
+        onOuvrirFlotte={() => setVue({ nom: "flotte" })}
         onOuvrirTechnique={() => setVue({ nom: "technique" })}
         onDeconnexion={deconnexion}
         surErreurAuth={surErreurAuth}
@@ -85,6 +88,9 @@ export default function App() {
   }
   if (vue.nom === "comptes") {
     return <Comptes moi={moi} onRetour={() => setVue({ nom: "lots" })} surErreurAuth={surErreurAuth} />
+  }
+  if (vue.nom === "flotte") {
+    return <Flotte moi={moi} onRetour={() => setVue({ nom: "lots" })} surErreurAuth={surErreurAuth} />
   }
   if (vue.nom === "technique") {
     return <Technique onRetour={() => setVue({ nom: "lots" })} surErreurAuth={surErreurAuth} />
