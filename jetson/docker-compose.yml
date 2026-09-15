@@ -1,0 +1,56 @@
+# =============================================================================
+# Kiosque Compost - déploiement sur Jetson (JetPack 7.x)
+#
+#   Lancer   : docker compose up -d          Journal : docker compose logs -f
+#   Arrêter  : docker compose down           Rebuild : docker compose build
+#
+# Les valeurs ${...} sont lues dans l'environnement du shell (DISPLAY, TZ) et dans
+# le fichier .env du dossier. Ce même .env est monté dans le conteneur pour l'application.
+# =============================================================================
+services:
+  kiosk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: compost-kiosk:jetpack7
+    container_name: compost-kiosk
+    # Redémarre après un plantage, au boot de la Jetson (sauf arrêt manuel via "down"/"stop"),
+    # et après l'arrêt volontaire (code 0) que l'application provoque quand elle a téléchargé
+    # une nouvelle version du modèle : l'entrypoint compile alors le moteur TensorRT au redémarrage.
+    restart: unless-stopped
+
+    # --- GPU : le runtime nvidia injecte le pilote CUDA/TensorRT de l'hôte
+    runtime: nvidia
+
+    # --- Réseau de l'hôte (HTTPS/DNS vers le VPS sans NAT) et mémoire partagée
+    #     (X11 MIT-SHM pour l'affichage, tenseurs torch)
+    network_mode: host
+    ipc: host
+
+    environment:
+      # Serveur d'affichage de la session graphique de la Jetson
+      - DISPLAY=${DISPLAY:-:0}
+      - TZ=${TZ:-Europe/Paris}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - QT_X11_NO_MITSHM=1
+      - SDL_JOYSTICK_DISABLE_UDEV=1
+
+    # --- Périphériques : caméra USB (V4L2) et encodeur 3 boutons (joystick)
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/input:/dev/input
+
+    volumes:
+      # Socket du serveur X11 : indispensable à cv2.imshow (autoriser avec "xhost +local:")
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      # Tampon local des captures (conservé tant que le VPS n'a pas confirmé la réception)
+      - ./a_annoter:/app/a_annoter
+      # Poids du modèle : best.engine (obligatoire), data.yaml, .current_version (version en place),
+      # et les new_* déposés par la mise à jour automatique puis compilés par l'entrypoint
+      - ./weights:/app/weights
+      # Configuration : SYNC_TOKEN, API_URL, JETSON_ID (unique par Jetson)
+      - ./.env:/app/.env:ro
+
+    working_dir: /app
+    # Commande par défaut définie dans le Dockerfile : python app_kiosk.py

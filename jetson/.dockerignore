@@ -1,0 +1,11 @@
+# Hors contexte de build : volumineux et/ou montés en volumes à l'exécution
+venv/
+a_annoter/
+weights/
+.env
+.git/
+__pycache__/
+*.pyc
+*.md
+autostart/
+launch_kiosk.sh

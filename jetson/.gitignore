@@ -1,0 +1,10 @@
+# Secrets et données locales : ne jamais versionner
+.env
+venv/
+a_annoter/*
+!a_annoter/.gitkeep
+# Poids du modèle : volumineux et le .engine est spécifique au GPU/TensorRT -> distribués hors git
+weights/*
+!weights/.gitkeep
+__pycache__/
+*.pyc
