@@ -81,6 +81,14 @@ def normaliser_jetson_id(brut: str) -> str:
     return brut.strip().lower().replace(":", "-")
 
 
+# Nom d'une version de modèle IA : il sert de nom de dossier dans le stockage
+# (`models/{version_name}/`) et doit rester un nom de fichier valide partout —
+# même alphabet que les identifiants de carte, majuscules admises
+# (`yolov8n_2026-09-15`, `v3.1`). Même règle dans le CHECK
+# `nom_version_valide` de model_versions.
+MODEL_VERSION_NAME_REGEX = r"^[A-Za-z0-9_.-]{1,100}$"
+
+
 # Transitions de statut autorisées — la même liste est gravée dans le trigger
 # CW002 (migration 0001, remplacé par 0004) ; toute évolution doit toucher
 # les deux.
@@ -175,6 +183,35 @@ class JetsonDevice(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ModelVersion(Base):
+    """Version publiée des poids du modèle IA, distribuée aux cartes Jetson :
+    un `.pt` et le `data.yaml` de SON entraînement (les classes d'un modèle
+    sont celles avec lesquelles il a été entraîné, pas forcément l'état
+    courant de DATA_YAML_PATH). Publiée par un administrateur
+    (POST /api/models_ia/upload) ; les cartes, sans compte, interrogent
+    GET /api/models_ia/latest avec le jeton SYNC_TOKEN puis téléchargent les
+    deux fichiers. Jamais modifiée ni supprimée : une nouvelle version = une
+    nouvelle ligne ; `latest` = la plus récente par created_at."""
+
+    __tablename__ = "model_versions"
+    __table_args__ = (
+        CheckConstraint(
+            f"version_name ~ '{MODEL_VERSION_NAME_REGEX}'", name="nom_version_valide"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    version_name: Mapped[str] = mapped_column(Text, unique=True)
+    # Chemins relatifs à STORAGE_ROOT — jamais absolus (comme images.*_path) :
+    # `models/{version_name}/model.pt` et `models/{version_name}/data.yaml`
+    pt_file_path: Mapped[str] = mapped_column(Text)
+    yaml_file_path: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 

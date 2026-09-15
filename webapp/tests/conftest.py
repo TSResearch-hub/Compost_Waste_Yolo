@@ -31,7 +31,7 @@ os.environ.setdefault(
 os.environ.setdefault("AUTH_INACTIVITY_MINUTES", "30")
 
 TABLES = (
-    "users, auth_sessions, jetson_devices, sessions, batches, "
+    "users, auth_sessions, jetson_devices, model_versions, sessions, batches, "
     "batch_assignments, images, annotations, image_status_events"
 )
 

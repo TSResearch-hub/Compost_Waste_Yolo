@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from .models import JETSON_ID_REGEX, ROLES, normaliser_jetson_id
 from .security import PASSWORD_MIN_LENGTH
@@ -89,3 +89,34 @@ class JetsonPatch(BaseModel):
 
     name: str | None = None
     is_active: bool | None = None
+
+
+# ── Distribution des modèles IA ───────────────────────────────────────────────
+
+class ModelVersionOut(BaseModel):
+    """Métadonnées d'une version publiée. `pt_url` / `yaml_url` sont les
+    chemins à appeler (même origine que l'API) avec le jeton SYNC_TOKEN en
+    `Authorization: Bearer …` pour télécharger les fichiers ; les
+    `*_file_path` sont les chemins internes au stockage, donnés pour
+    information. La publication (POST /api/models_ia/upload) est un
+    formulaire multipart (`version_name`, `pt_file`, `yaml_file`) — pas de
+    schéma d'entrée JSON."""
+
+    model_config = {"from_attributes": True}
+
+    id: int
+    version_name: str
+    pt_file_path: str
+    yaml_file_path: str
+    created_by: int
+    created_at: datetime
+
+    @computed_field
+    @property
+    def pt_url(self) -> str:
+        return f"/api/models_ia/{self.id}/fichier/pt"
+
+    @computed_field
+    @property
+    def yaml_url(self) -> str:
+        return f"/api/models_ia/{self.id}/fichier/yaml"

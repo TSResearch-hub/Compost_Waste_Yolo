@@ -1,5 +1,6 @@
 /** Aiguillage : login → (changement de mot de passe imposé) → lots →
- * annotation, plus les écrans administrateur (comptes, matériel, technique).
+ * annotation, plus les écrans administrateur (comptes, matériel, modèles IA,
+ * technique).
  * Pas de routeur — des vues, un état. La session vit dans le cookie HttpOnly ;
  * au chargement on demande simplement au serveur qui on est. */
 import { useCallback, useEffect, useState } from "react"
@@ -10,6 +11,7 @@ import Comptes from "./Comptes"
 import Flotte from "./Flotte"
 import Login from "./Login"
 import Lots from "./Lots"
+import ModelesIA from "./ModelesIA"
 import MotDePasse from "./MotDePasse"
 import Technique from "./Technique"
 
@@ -20,6 +22,7 @@ type Vue =
   | { nom: "annotation"; lotId: number; lotNom: string }
   | { nom: "comptes" }
   | { nom: "flotte" }
+  | { nom: "modeles" }
   | { nom: "technique" }
 
 export default function App() {
@@ -80,6 +83,7 @@ export default function App() {
         onOuvrirLot={(lotId, lotNom) => setVue({ nom: "annotation", lotId, lotNom })}
         onOuvrirComptes={() => setVue({ nom: "comptes" })}
         onOuvrirFlotte={() => setVue({ nom: "flotte" })}
+        onOuvrirModeles={() => setVue({ nom: "modeles" })}
         onOuvrirTechnique={() => setVue({ nom: "technique" })}
         onDeconnexion={deconnexion}
         surErreurAuth={surErreurAuth}
@@ -91,6 +95,9 @@ export default function App() {
   }
   if (vue.nom === "flotte") {
     return <Flotte moi={moi} onRetour={() => setVue({ nom: "lots" })} surErreurAuth={surErreurAuth} />
+  }
+  if (vue.nom === "modeles") {
+    return <ModelesIA moi={moi} onRetour={() => setVue({ nom: "lots" })} surErreurAuth={surErreurAuth} />
   }
   if (vue.nom === "technique") {
     return <Technique onRetour={() => setVue({ nom: "lots" })} surErreurAuth={surErreurAuth} />

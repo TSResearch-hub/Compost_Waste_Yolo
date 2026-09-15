@@ -11,13 +11,7 @@ export class ApiError extends Error {
   }
 }
 
-async function appel<T>(method: string, url: string, corps?: unknown): Promise<T> {
-  const r = await fetch(url, {
-    method,
-    credentials: "same-origin",
-    headers: corps !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: corps !== undefined ? JSON.stringify(corps) : undefined,
-  })
+async function lireReponse<T>(r: Response): Promise<T> {
   if (!r.ok) {
     let detail = `${r.status} ${r.statusText}`
     try {
@@ -30,6 +24,24 @@ async function appel<T>(method: string, url: string, corps?: unknown): Promise<T
   }
   if (r.status === 204) return undefined as T
   return r.json()
+}
+
+async function appel<T>(method: string, url: string, corps?: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method,
+    credentials: "same-origin",
+    headers: corps !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: corps !== undefined ? JSON.stringify(corps) : undefined,
+  })
+  return lireReponse<T>(r)
+}
+
+// Formulaire multipart (fichiers) : surtout PAS d'en-tête Content-Type — le
+// navigateur le pose lui-même avec la frontière (boundary) du multipart,
+// l'écrire à la main casserait l'envoi.
+async function appelMultipart<T>(method: string, url: string, form: FormData): Promise<T> {
+  const r = await fetch(url, { method, credentials: "same-origin", body: form })
+  return lireReponse<T>(r)
 }
 
 // ── Formes des réponses (miroir des schémas Pydantic) ───────────────────────
@@ -63,6 +75,22 @@ export interface Jetson {
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+// version publiée des poids du modèle IA — jamais modifiée ni supprimée ;
+// la plus récente (première de la liste) est celle que les cartes récupèrent
+// via GET /api/models_ia/latest avec leur jeton, hors de tout écran
+export interface ModelVersion {
+  id: number
+  version_name: string
+  created_at: string
+  created_by: number
+  // chemins internes au stockage et URL de téléchargement (jeton requis :
+  // le cookie de session n'y donne pas accès) — donnés pour information
+  pt_file_path: string
+  yaml_file_path: string
+  pt_url: string
+  yaml_url: string
 }
 
 export interface Lot {
@@ -229,6 +257,18 @@ export const api = {
     appel<Jetson>("POST", "/api/jetsons", { id, name }),
   modifierJetson: (id: string, corps: Partial<{ is_active: boolean; name: string | null }>) =>
     appel<Jetson>("PATCH", `/api/jetsons/${encodeURIComponent(id)}`, corps),
+
+  // modèles IA — administrateur uniquement. L'historique complet, la plus
+  // récente en premier ; la publication est un formulaire multipart (nom de
+  // version + les deux fichiers), pas du JSON
+  listerModeles: () => appel<ModelVersion[]>("GET", "/api/models_ia"),
+  uploadModele: (versionName: string, ptFile: File, yamlFile: File) => {
+    const form = new FormData()
+    form.append("version_name", versionName)
+    form.append("pt_file", ptFile)
+    form.append("yaml_file", yamlFile)
+    return appelMultipart<ModelVersion>("POST", "/api/models_ia/upload", form)
+  },
 
   lots: () => appel<Lot[]>("GET", "/api/batches"),
   assignerLot: (lotId: number, userId: number) =>

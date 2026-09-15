@@ -17,6 +17,7 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import BinaryIO
 
 from .config import get_settings
 
@@ -28,6 +29,11 @@ class Storage(ABC):
 
     @abstractmethod
     def read(self, relative_path: str) -> bytes: ...
+
+    @abstractmethod
+    def open(self, relative_path: str) -> BinaryIO:
+        """Flux binaire en lecture, pour servir un gros fichier (poids d'un
+        modèle) par morceaux sans le charger en mémoire ; l'appelant ferme."""
 
     @abstractmethod
     def exists(self, relative_path: str) -> bool: ...
@@ -57,6 +63,9 @@ class FilesystemStorage(Storage):
 
     def read(self, relative_path: str) -> bytes:
         return self._resolve(relative_path).read_bytes()
+
+    def open(self, relative_path: str) -> BinaryIO:
+        return self._resolve(relative_path).open("rb")
 
     def exists(self, relative_path: str) -> bool:
         return self._resolve(relative_path).exists()

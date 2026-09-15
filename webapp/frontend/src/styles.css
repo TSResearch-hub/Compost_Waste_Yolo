@@ -575,6 +575,11 @@ h2 {
 .ligne-inactive td {
   opacity: 0.55;
 }
+/* Modèles IA : la version en tête de l'historique est celle que les cartes
+   récupèrent — elle doit se repérer d'un coup d'œil */
+.ligne-courante td {
+  background: #e6f4ea;
+}
 .table-lots td select {
   font-size: 12px;
   padding: 3px;

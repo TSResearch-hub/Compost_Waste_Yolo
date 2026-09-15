@@ -10,8 +10,11 @@ import yaml
 from .config import get_settings
 
 
-@lru_cache
-def _load(path: str) -> tuple[str, ...]:
+def lire_data_yaml(path: Path) -> tuple[str, ...]:
+    """Lit et valide un data.yaml : liste `names` non vide de chaînes, dans
+    l'ordre du fichier. ValueError sinon (yaml.YAMLError si illisible). Sans
+    cache — sert aussi à contrôler un fichier téléversé
+    (POST /api/models_ia/upload) avant de l'accepter."""
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     names = data.get("names") if isinstance(data, dict) else None
     if not isinstance(names, list) or not names or not all(
@@ -19,6 +22,11 @@ def _load(path: str) -> tuple[str, ...]:
     ):
         raise ValueError(f"data.yaml invalide ({path}) : liste `names` attendue")
     return tuple(names)
+
+
+@lru_cache
+def _load(path: str) -> tuple[str, ...]:
+    return lire_data_yaml(Path(path))
 
 
 def class_names() -> tuple[str, ...]:

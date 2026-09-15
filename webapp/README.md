@@ -75,7 +75,8 @@ transitions autorisées existe en deux exemplaires
 toucher les deux (`test_transitions_whitelist` les compare paire par paire).
 `0003` ajoute `users.must_change_password` ; `0004` remplace le trigger CW002
 pour y faire entrer `en_cours → relue` (relecture — voir plus bas) ; `0005`
-crée `jetson_devices` et `sessions.jetson_id` (flotte Jetson — voir plus bas).
+crée `jetson_devices` et `sessions.jetson_id` (flotte Jetson — voir plus bas) ;
+`0006` crée `model_versions` (distribution des modèles IA — voir plus bas).
 
 ## Premier administrateur, puis comptes
 
@@ -193,6 +194,53 @@ Comportement :
 - réponse 201 + rapport d'import (créées / doublons / rejetées), identique à
   `POST /api/imports` ; 409 simple si deux envois de la même carte se croisent
   à la création de la session du jour (réessayer : rattachement).
+
+## Distribution des modèles IA — poids pour les cartes
+
+Le chemin inverse de la réception : le serveur distribue aux cartes la
+version courante des poids. Un administrateur **publie** une version —
+`POST /api/models_ia/upload`, formulaire multipart : `version_name`
+(`[A-Za-z0-9_.-]{1,100}`, unique, il nomme le dossier), `pt_file` (le `.pt`)
+et `yaml_file` (le `data.yaml` de l'entraînement : les classes d'un modèle
+sont celles avec lesquelles il a été entraîné). Les fichiers sont posés dans
+le stockage sous `models/{version_name}/model.pt` et `…/data.yaml`, une
+ligne `model_versions` les référence (chemins relatifs à `STORAGE_ROOT`,
+auteur, date). `GET /api/models_ia` liste les versions (administrateur).
+L'**écran « Modèles IA »** (administrateur, depuis les lots, à côté de
+« Matériel ») fait la même chose depuis le navigateur : nom de version, le
+`.pt`, le `data.yaml`, bouton « Déployer sur la flotte » (confirmation) ;
+l'historique liste les versions, la première étant marquée « version
+actuelle en production ». Un nom déjà pris ou une extension inattendue sont
+signalés avant l'envoi, l'envoi lui-même est un formulaire multipart.
+
+Les cartes, sans compte, présentent le **même jeton** `SYNC_TOKEN`
+(`Authorization: Bearer …` — en-tête seulement, pas de jeton dans l'URL) :
+
+```bash
+H="Authorization: Bearer $SYNC_TOKEN"
+curl -sS -H "$H" https://VPS/api/models_ia/latest
+# {"id":3,"version_name":"yolov8n_2026-09-15","pt_url":"/api/models_ia/3/fichier/pt",
+#  "yaml_url":"/api/models_ia/3/fichier/yaml","created_at":…, …}
+curl -sS -H "$H" -o model.pt  https://VPS/api/models_ia/3/fichier/pt
+curl -sS -H "$H" -o data.yaml https://VPS/api/models_ia/3/fichier/yaml
+```
+
+Comportement :
+- `latest` = la version la plus récente (`created_at` DESC) ; 404 tant que
+  rien n'est publié, 401 jeton invalide, 503 `SYNC_TOKEN` non configuré
+  (distribution coupée, comme la réception). La carte compare le
+  `version_name` au sien et ne télécharge que s'il diffère ;
+- les fichiers sont servis par morceaux avec `Content-Length` (un
+  téléchargement tronqué se détecte) et `Content-Disposition` ; une ligne
+  dont le fichier manque répond 500, pas 404 — une carte ne doit pas confondre
+  incident serveur et absence de modèle ;
+- une version n'est **jamais modifiée ni supprimée** (le stockage ne réécrit
+  jamais) : republier = publier sous un nouveau nom ; même nom : 409. Le
+  `.pt` doit être non vide et porter l'extension `.pt`, le `data.yaml` doit
+  contenir une liste `names` non vide (422 sinon) ; plafond
+  `MODELS_MAX_UPLOAD_MB` par fichier (413). Tout refus après la copie efface
+  les fichiers écrits : jamais de fichiers sans ligne ni de ligne sans
+  fichiers.
 
 ## Assignation, verrou, découpage
 

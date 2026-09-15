@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .routers import (auth, batches, exports, images, imports, jetsons,
-                      preannotation, sessions, sync, users)
+                      models_ia, preannotation, sessions, sync, users)
 
 # Build du front (webapp/frontend, `npm run build`) — servi par le même
 # process, même origine : le cookie de session suffit, pas de CORS.
@@ -26,6 +26,9 @@ def create_app() -> FastAPI:
     # automatiques (jeton partagé, pas de cookie — voir routers/sync.py)
     app.include_router(jetsons.router)
     app.include_router(sync.router)
+    # Distribution des poids du modèle IA : publication par un administrateur,
+    # récupération par les cartes avec le même jeton (voir routers/models_ia.py)
+    app.include_router(models_ia.router)
 
     @app.get("/api/health", tags=["meta"])
     def health():

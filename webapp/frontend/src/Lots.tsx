@@ -2,7 +2,7 @@
  * administrateur : découpage en lots de N (round-robin entre postes côté
  * serveur), assignation à un compte actif, libération forcée, court-circuit
  * de la file de pré-annotation — plus les entrées vers les écrans Comptes,
- * Matériel (flotte Jetson) et Technique. */
+ * Matériel (flotte Jetson), Modèles IA (poids pour la flotte) et Technique. */
 import { useCallback, useEffect, useState } from "react"
 
 import { api, type Lot, type Moi, type Utilisateur } from "./api"
@@ -12,6 +12,7 @@ interface Props {
   onOuvrirLot: (lotId: number, lotNom: string) => void
   onOuvrirComptes: () => void
   onOuvrirFlotte: () => void
+  onOuvrirModeles: () => void
   onOuvrirTechnique: () => void
   onDeconnexion: () => void
   surErreurAuth: (e: unknown) => boolean
@@ -30,6 +31,7 @@ export default function Lots({
   onOuvrirLot,
   onOuvrirComptes,
   onOuvrirFlotte,
+  onOuvrirModeles,
   onOuvrirTechnique,
   onDeconnexion,
   surErreurAuth,
@@ -287,6 +289,9 @@ export default function Lots({
               </button>
               <button className="btn btn-petit" onClick={onOuvrirFlotte}>
                 Matériel
+              </button>
+              <button className="btn btn-petit" onClick={onOuvrirModeles}>
+                Modèles IA
               </button>
               <button className="btn btn-petit" onClick={onOuvrirTechnique}>
                 Technique

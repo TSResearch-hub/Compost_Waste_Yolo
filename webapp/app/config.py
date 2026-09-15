@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     sync_max_upload_mb: int = 512
     sync_max_unzipped_mb: int = 2048
 
+    # ── Distribution des modèles IA (routeur models_ia) ──────────────────────
+    # Taille max (Mo) de chaque fichier téléversé par POST /api/models_ia/upload
+    # (le .pt surtout) — au-delà, 413 et rien n'est écrit
+    models_max_upload_mb: int = 1024
+
 
 @lru_cache
 def get_settings() -> Settings:
