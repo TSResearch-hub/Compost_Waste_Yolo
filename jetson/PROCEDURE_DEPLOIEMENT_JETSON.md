@@ -2,7 +2,9 @@
 
 Ce document explique comment installer le kiosque de détection Compost sur une **nouvelle carte NVIDIA Jetson**, de façon identique d'une carte à l'autre. L'application tourne dans un conteneur Docker : le même conteneur est utilisé sur toutes les cartes, seuls le fichier `.env` (identité de la carte) et les poids du modèle changent.
 
-Le kiosque affiche le flux de la caméra en plein écran, détecte les indésirables dans le compost grâce au modèle IA, enregistre des captures localement dans `a_annoter/`, puis les envoie au serveur (VPS) en tâche de fond. En cas de coupure réseau, les captures restent sur la carte et repartent dès le retour de la connexion (bandeau rouge « HORS LIGNE - ENREGISTREMENT LOCAL » à l'écran).
+Le kiosque affiche le flux de la caméra en plein écran, détecte les indésirables dans le compost grâce au modèle IA, enregistre des captures localement dans `a_annoter/`, puis les envoie au serveur (VPS) en tâche de fond. En cas de coupure réseau, les captures restent sur la carte et repartent dès le retour de la connexion (bandeau rouge « HORS LIGNE - ENREGISTREMENT LOCAL » à l'écran). Le tampon local est plafonné à **2000 images** (environ 1 Go) : au-delà, la capture la plus ancienne est effacée pour faire place à la nouvelle.
+
+> **Raccourci : `./setup.sh`.** Le script d'installation guidée, lancé depuis le dossier `jetson/`, effectue les contrôles Docker de l'étape 1 et enchaîne les étapes 3, 5 et 6 en posant trois questions (adresse du serveur, identifiant de la carte, jeton). Les étapes ci-dessous restent la référence pour comprendre ce qu'il fait, l'exploiter et dépanner.
 
 ---
 
@@ -59,11 +61,11 @@ ls ~/.config/autostart/            # supprimez l'entrée qui lance launch_kiosk.
 ## 2. Récupérer l'application
 
 ```bash
-git clone <URL_DU_DEPOT> ~/Compost_Jetson
-cd ~/Compost_Jetson
+git clone https://github.com/TSResearch-hub/Compost_Waste_Yolo.git ~/Compost_Waste_Yolo
+cd ~/Compost_Waste_Yolo/jetson
 ```
 
-Le dossier doit s'appeler `Compost_Jetson` et se trouver dans votre dossier personnel : le démarrage automatique (étape 6) compte dessus.
+Tout se passe dans le dossier `jetson/` du dépôt (c'est lui qui contient `docker-compose.yml`). Le reste de cette procédure suppose qu'il se trouve à `~/Compost_Waste_Yolo/jetson` ; si vous choisissez un autre emplacement, adaptez les chemins (le démarrage automatique de l'étape 6 y fait référence).
 
 ---
 
@@ -106,7 +108,7 @@ Les fichiers de poids ne sont pas dans le dépôt Git. Copiez-les dans le dossie
 Depuis un PC sur le même réseau :
 
 ```bash
-scp best.engine best.pt <utilisateur>@<adresse-ip-de-la-jetson>:~/Compost_Jetson/weights/
+scp best.engine best.pt <utilisateur>@<adresse-ip-de-la-jetson>:~/Compost_Waste_Yolo/jetson/weights/
 ```
 
 **Important.** Un fichier `.engine` est lié au modèle de GPU et à la version de TensorRT qui l'ont produit. Si la nouvelle carte est d'un modèle différent, ou si le journal affiche une erreur au chargement du moteur (« deserialize », « version mismatch »), régénérez-le sur la carte à partir de `best.pt` (durée : 10 à 20 minutes) :
@@ -130,7 +132,7 @@ Conséquence : au premier lancement, la carte télécharge la version publiée m
 Depuis un terminal **ouvert dans la session graphique de la Jetson** :
 
 ```bash
-cd ~/Compost_Jetson
+cd ~/Compost_Waste_Yolo/jetson
 xhost +local:                 # autorise le conteneur à utiliser l'écran
 docker compose build          # première fois : environ 4 Go téléchargés, 10 à 20 minutes
 docker compose up -d
@@ -159,8 +161,10 @@ Docker relance le conteneur automatiquement à chaque démarrage de la carte. Il
 
 ```bash
 mkdir -p ~/.config/autostart
-cp ~/Compost_Jetson/autostart/compost-kiosk.desktop ~/.config/autostart/
+cp ~/Compost_Waste_Yolo/jetson/autostart/compost-kiosk.desktop ~/.config/autostart/
 ```
+
+(`setup.sh` installe cette entrée pour vous, avec le chemin réel du dossier. À la main, si le dossier n'est pas `~/Compost_Waste_Yolo/jetson`, corrigez le `cd` de la ligne `Exec=` du fichier copié.)
 
 Activez ensuite l'ouverture de session automatique : Paramètres → Utilisateurs → « Connexion automatique ». Redémarrez la carte pour valider : le kiosque doit apparaître seul, sans intervention.
 
@@ -168,7 +172,7 @@ Activez ensuite l'ouverture de session automatique : Paramètres → Utilisateur
 
 ## 7. Exploitation courante
 
-| Besoin | Commande (dans `~/Compost_Jetson`) |
+| Besoin | Commande (dans `~/Compost_Waste_Yolo/jetson`) |
 |---|---|
 | Voir le journal en direct | `docker compose logs -f` |
 | Redémarrer le kiosque | `docker compose restart` |
@@ -179,7 +183,7 @@ Activez ensuite l'ouverture de session automatique : Paramètres → Utilisateur
 | Voir la version du modèle en place | `cat weights/.current_version` |
 | Forcer le re-téléchargement et la recompilation du modèle publié | `sudo rm weights/.current_version && docker compose restart` (écran noir ~10 min) |
 
-Les captures en attente d'envoi sont dans `~/Compost_Jetson/a_annoter/`. Le dossier se vide au fur et à mesure des envois réussis. Les fichiers y appartiennent à `root` (créés par le conteneur) : utilisez `sudo` pour les manipuler.
+Les captures en attente d'envoi sont dans `~/Compost_Waste_Yolo/jetson/a_annoter/`. Le dossier se vide au fur et à mesure des envois réussis et ne dépasse jamais 2000 images (au-delà, la plus ancienne est effacée à chaque nouvelle capture). Les fichiers y appartiennent à `root` (créés par le conteneur) : utilisez `sudo` pour les manipuler.
 
 ---
 
@@ -193,7 +197,7 @@ Les captures en attente d'envoi sont dans `~/Compost_Jetson/a_annoter/`. Le doss
 | Erreur au chargement du moteur (« deserialize », « version mismatch ») | `best.engine` produit sur un autre GPU ou une autre version de TensorRT | Régénérez-le (étape 4), ou forcez la mise à jour automatique : `sudo rm weights/.current_version && docker compose restart`. |
 | Écran noir, journal : « Nouvelle version détectée, compilation TensorRT en cours » | Mise à jour automatique du modèle en cours | Attendez environ 10 minutes sans redémarrer la carte. |
 | Journal : « la compilation TensorRT de weights/new_best.pt a échoué » | Poids publiés incompatibles, ou incident pendant la compilation | Le kiosque continue avec l'ancien modèle. Lisez l'erreur dans `docker compose logs`, prévenez l'administrateur ; pour réessayer : `sudo rm weights/.current_version && docker compose restart`. |
-| Bandeau « HORS LIGNE » permanent | `.env` incorrect, jeton invalide, DNS ou Internet indisponible | `docker compose logs --tail 50` (lignes « Sync : … »), vérifiez `.env`, puis `curl -I https://compost-dns.duckdns.org`. Surveillez l'espace disque avec `df -h` : le tampon local grossit tant que l'envoi échoue. |
+| Bandeau « HORS LIGNE » permanent | `.env` incorrect, jeton invalide, DNS ou Internet indisponible | `docker compose logs --tail 50` (lignes « Sync : … »), vérifiez `.env`, puis `curl -I https://compost-dns.duckdns.org`. Le tampon local est plafonné à 2000 images : passé ce seuil, les captures les plus anciennes sont perdues tant que l'envoi échoue. |
 | « unknown or invalid runtime name: nvidia » | Runtime GPU non déclaré à Docker | `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
 | « permission denied » sur `docker` | Utilisateur hors du groupe `docker` | `sudo usermod -aG docker $USER` puis déconnexion/reconnexion. |
 | `.env` refusé : « est un dossier » | Le conteneur a été lancé avant la création du `.env` | `sudo rm -r .env`, puis reprenez l'étape 3. |
@@ -220,7 +224,7 @@ Tant que ce ré-entraînement n'a pas eu lieu, considérez les détections du no
 - [ ] JetPack 7.2+ vérifié (`cat /etc/nv_tegra_release`)
 - [ ] Docker fonctionnel avec le runtime `nvidia`, utilisateur dans le groupe `docker`
 - [ ] Ancien lancement `launch_kiosk.sh` désactivé (si la carte a déjà servi)
-- [ ] Dépôt cloné dans `~/Compost_Jetson`
+- [ ] Dépôt cloné, travail dans `~/Compost_Waste_Yolo/jetson` (ou `./setup.sh` lancé depuis ce dossier)
 - [ ] `.env` créé avec un **`JETSON_ID` unique**, étiquette collée sur le caisson
 - [ ] `weights/best.engine` en place (moteur régénéré si nécessaire ; `best.pt` facultatif)
 - [ ] `xhost +local:` puis `docker compose build` et `docker compose up -d` réussis

@@ -19,6 +19,7 @@ os.environ["QT_LOGGING_RULES"] = "qt.qpa.fonts.warning=false"
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 DOSSIER_ANNOTATION = "a_annoter"
+TAMPON_MAX_IMAGES = 2000        # plafond du tampon hors-ligne : au-delà, la capture la plus ancienne est supprimée (FIFO)
 os.makedirs(DOSSIER_ANNOTATION, exist_ok=True)
 
 # Configuration de la synchronisation VPS (fichier .env à côté de ce script)
@@ -30,7 +31,7 @@ SYNC_INTERVALLE = 60            # secondes entre deux tentatives d'envoi
 SYNC_MAX_IMAGES_PAR_LOT = 100   # borne la taille du ZIP en mémoire (0 = tout envoyer d'un coup)
 SYNC_AGE_MIN = 2.0              # secondes : ignore une image encore en cours d'écriture
 
-# Mise à jour automatique des poids du modèle (voir section 3 et docker/entrypoint.sh)
+# Mise à jour automatique des poids du modèle (voir section 4 et docker/entrypoint.sh)
 MODELE_INTERVALLE = 3600        # secondes entre deux vérifications de la version publiée sur le VPS (1 h = 60 cycles)
 DOSSIER_POIDS = "weights"
 FICHIER_VERSION = os.path.join(DOSSIER_POIDS, ".current_version")   # version_name des poids en place
@@ -131,7 +132,47 @@ temps_derniere_alerte = 0.0
 reseau_ok = True
 
 # ==========================================
-# 3. SYNCHRONISATION VPS ET MISE À JOUR DU MODÈLE (TÂCHE DE FOND)
+# 3. TAMPON LOCAL DES CAPTURES (PLAFOND FIFO)
+# ==========================================
+# Le tampon est partagé entre la boucle principale (écriture des captures, purge FIFO) et le thread
+# de synchronisation (archivage puis suppression après envoi) : ce verrou évite qu'une capture
+# disparaisse pendant qu'elle est archivée.
+verrou_tampon = threading.Lock()
+
+
+def liberer_place_tampon():
+    """Applique le plafond TAMPON_MAX_IMAGES à DOSSIER_ANNOTATION avant d'y écrire une nouvelle
+    capture : tant que le dossier contient au moins TAMPON_MAX_IMAGES images, la plus ancienne
+    (date de modification) est supprimée. Après une très longue coupure réseau, le tampon ne
+    grossit donc plus : les captures les plus anciennes cèdent la place aux plus récentes (FIFO)
+    et le disque de la carte ne se remplit jamais (2000 images 1080p ~ 1 Go)."""
+    with verrou_tampon:
+        images = []
+        for entree in os.scandir(DOSSIER_ANNOTATION):
+            if not entree.name.lower().endswith(".jpg"):
+                continue
+            try:
+                images.append((entree.stat().st_mtime, entree.path))
+            except OSError:
+                pass   # supprimée entre-temps (ménage manuel sur la carte)
+        images.sort()
+        a_supprimer = len(images) - TAMPON_MAX_IMAGES + 1
+        for _, chemin in images[:max(a_supprimer, 0)]:
+            try:
+                os.remove(chemin)
+                print(f"Tampon : plafond de {TAMPON_MAX_IMAGES} images atteint, {os.path.basename(chemin)} (la plus ancienne) supprimée")
+            except OSError as e:
+                print(f"Tampon : impossible de supprimer {os.path.basename(chemin)} ({e})")
+
+
+def enregistrer_capture(nom_fichier, frame):
+    """Écrit une capture dans le tampon local après y avoir libéré la place nécessaire (FIFO)."""
+    liberer_place_tampon()
+    cv2.imwrite(nom_fichier, frame)
+
+
+# ==========================================
+# 4. SYNCHRONISATION VPS ET MISE À JOUR DU MODÈLE (TÂCHE DE FOND)
 # ==========================================
 def telecharger_fichier(url, destination):
     """Télécharge `url` vers `destination` par morceaux d'1 Mo (stream=True : un .pt pèse des
@@ -215,32 +256,41 @@ def sync_worker():
 
     Le dossier DOSSIER_ANNOTATION sert de tampon local : une image n'est
     supprimée qu'après confirmation (HTTP 201) de sa réception par le serveur.
-    En cas de coupure réseau, tout reste sur disque et sera renvoyé plus tard.
+    En cas de coupure réseau, tout reste sur disque et sera renvoyé plus tard,
+    dans la limite de TAMPON_MAX_IMAGES (au-delà, la boucle principale écrase
+    les plus anciennes : voir liberer_place_tampon).
     """
     global reseau_ok
     derniere_verif_modele = 0.0   # 0 = première vérification dès le premier cycle (au démarrage)
     while True:
         try:
             maintenant = time.time()
-            images = sorted(
-                nom for nom in os.listdir(DOSSIER_ANNOTATION)
-                if nom.lower().endswith(".jpg")
-                and maintenant - os.path.getmtime(os.path.join(DOSSIER_ANNOTATION, nom)) > SYNC_AGE_MIN
-            )
-            if SYNC_MAX_IMAGES_PAR_LOT > 0:
-                images = images[:SYNC_MAX_IMAGES_PAR_LOT]
+            # Inventaire et archivage sous verrou : la purge FIFO de la boucle principale ne peut
+            # pas supprimer une image entre son inventaire et son archivage (verrou libéré avant
+            # l'envoi réseau, qui peut durer longtemps)
+            with verrou_tampon:
+                images = sorted(
+                    nom for nom in os.listdir(DOSSIER_ANNOTATION)
+                    if nom.lower().endswith(".jpg")
+                    and maintenant - os.path.getmtime(os.path.join(DOSSIER_ANNOTATION, nom)) > SYNC_AGE_MIN
+                )
+                if SYNC_MAX_IMAGES_PAR_LOT > 0:
+                    images = images[:SYNC_MAX_IMAGES_PAR_LOT]
+
+                if images and SYNC_CONFIG_OK:
+                    # Archive ZIP en mémoire (JPEG déjà compressé -> ZIP_STORED, pas de recompression inutile).
+                    # strict_timestamps=False : une capture faite avant la mise à l'heure de la carte
+                    # (fichier daté de 1970) serait sinon refusée par zipfile et bloquerait tout envoi.
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_STORED, strict_timestamps=False) as archive:
+                        for nom in images:
+                            archive.write(os.path.join(DOSSIER_ANNOTATION, nom), arcname=nom)
+                    zip_buffer.seek(0)
 
             if images and not SYNC_CONFIG_OK:
                 reseau_ok = False
 
             elif images:
-                # Archive ZIP en mémoire (JPEG déjà compressé -> ZIP_STORED, pas de recompression inutile)
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_STORED) as archive:
-                    for nom in images:
-                        archive.write(os.path.join(DOSSIER_ANNOTATION, nom), arcname=nom)
-                zip_buffer.seek(0)
-
                 reponse = requests.post(
                     f"{API_URL}/api/sync/upload",
                     files={"archive": ("captures.zip", zip_buffer, "application/zip")},
@@ -292,7 +342,7 @@ print("Interface lancée. Appuyez sur vos boutons pour tester (Ctrl+C dans le te
 threading.Thread(target=sync_worker, name="sync_worker", daemon=True).start()
 
 # ==========================================
-# 4. BOUCLE PRINCIPALE
+# 5. BOUCLE PRINCIPALE
 # ==========================================
 try:
     while running:
@@ -347,7 +397,7 @@ try:
 
         # Si le bouton 0 a été pressé à cette boucle, on sauvegarde maintenant qu'on a l'image
         if message_temporaire == "CAPTURE MANUELLE" and time.time() < fin_message and (fin_message - time.time()) > 1.9:
-            cv2.imwrite(nom_fichier, frame_brute)
+            enregistrer_capture(nom_fichier, frame_brute)
 
         # --- INFÉRENCE IA ---
         results = model(frame_brute, verbose=False)
@@ -358,7 +408,7 @@ try:
             # Cooldown de 3 secondes minimum entre deux captures automatiques
             if time.time() - temps_derniere_alerte > 3.0:
                 nom_fichier = os.path.join(DOSSIER_ANNOTATION, f"auto_{datetime.now():%Y%m%d_%H%M%S}.jpg")
-                cv2.imwrite(nom_fichier, frame_brute)
+                enregistrer_capture(nom_fichier, frame_brute)
                 temps_derniere_alerte = time.time()
                 message_temporaire = "ALERTE SAUVEGARDEE"
                 fin_message = time.time() + 2.0

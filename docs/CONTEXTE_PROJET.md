@@ -1,0 +1,72 @@
+# Contexte et genèse du projet
+
+> Ancien `README.md` du dépôt, conservé tel quel : il présente le contexte du projet et le premier livrable (outil d'annotation assisté par IA). Le point d'entrée à jour est le [`README.md`](../README.md) à la racine.
+
+---
+
+# Contexte :
+
+La gestion efficace des composts collectifs est essentielle pour réduire les
+déchets et encourager le recyclage organique. Toutefois, la présence de
+matériaux inappropriés (plastiques, métaux, verre, etc.) reste un problème
+récurrent, affectant la qualité et la sécurité du compost final. Une solution
+préventive est indispensable pour garantir un compostage optimisé, durable et
+respectueux de l’environnement.
+
+# Objectif :
+Ce projet vise à concevoir une solution automatisée capable d’analyser les
+déchets avant leur intégration dans le compost collectif. Le système s’appuiera sur une intelligence artificielle (IA) pour examiner le contenu des poubelles à l’aide d’une caméra connectée. 
+- En cas de détection d’anomalies (objets non compostables), les
+gestionnaires pourront intervenir pour retirer les éléments inappropriés.
+- Si aucun problème n’est détecté, les déchets seront ajoutés directement
+au compost principal.
+---
+
+
+
+## 📸 Aperçu
+
+![pipeline](../images/pipeline.png)
+![Yolo](../images/yolo.png)
+
+---
+## Problématique  
+Pour entraîner une IA, il nous faut des données adaptées à notre situation.  
+
+Les données sont constituées d’images contenant des déchets, accompagnées d’annotations :  
+- des boîtes englobantes (coordonnées) pour la détection des objets ;  
+- une classe associée à chaque boîte afin de définir à quelle catégorie appartient l’objet.  
+
+Il existe des données annotées en open source, mais elles ne correspondent pas aux données cibles (c’est-à-dire des déchets compostables, partiellement broyés et mélangés sur un plateau).  
+
+![multi](../images/multi_class.png)
+
+---
+### Exemple de donnée cible 
+![cible](../images/donnee_cible.png)
+
+
+
+### Il faut annoter des données dans des conditions cibles (boîtes englobantes, classes)
+Cela prend beaucoup de temps. 
+
+
+## Premier livrable : conception d’un outil d’annotation de données avec IA intégrée  
+
+Nous utilisons des données open source pour entraîner une première version de notre IA.  
+Puis, nous utilisons cette IA pour nous aider à annoter de nouvelles images.  
+
+Une fois ces nouvelles images annotées, nous réentraînons notre IA.  
+
+Ce processus itératif pourra être répété plusieurs fois afin d’augmenter progressivement les performances.  
+
+## 🔁 Boucle d'amélioration continue (outillée de bout en bout)
+
+1. **Annoter** — app PC (`streamlit run app.py`) ou mobile (`python mobile/server.py`) → tout tombe dans `dataset_recolte/`
+2. **Contrôler** — onglet **📊 Dataset** : répartition des classes, anomalies (bboxes fantômes, doublons…) ; onglet **🔍 Vérification** : relecture, correction, corbeille
+3. **Exporter** — bouton d'export de l'onglet Dataset → `exports/export_.../data.yaml` (split train/val stratifié)
+4. **Réentraîner** — `python train.py --data exports/export_.../data.yaml`
+5. **Déployer** — copier le `best.pt` produit vers `weights/best.pt` : l'app PC et le mobile pré-annotent aussitôt avec le nouveau modèle
+
+## 🎥 Démo vidéo
+[![Voir la vidéo](https://img.youtube.com/vi/SuXwnxzrbc4/0.jpg)](https://www.youtube.com/watch?v=SuXwnxzrbc4)

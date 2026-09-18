@@ -2,7 +2,7 @@
 Type=Application
 Name=Compost Kiosk (Docker)
 Comment=Autorise l'affichage X11 pour le conteneur puis (re)lance le kiosque Compost
-Exec=sh -c "xhost +local: ; cd ~/Compost_Jetson && docker compose up -d"
+Exec=sh -c "xhost +local: ; cd ~/Compost_Waste_Yolo/jetson && docker compose up -d"
 Terminal=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true

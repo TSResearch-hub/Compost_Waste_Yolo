@@ -9,3 +9,4 @@ __pycache__/
 *.md
 autostart/
 launch_kiosk.sh
+setup.sh
