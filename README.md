@@ -123,7 +123,8 @@ dossier `STORAGE_ROOT` et le fichier `.env`.
 | **Comptes** | créer les comptes des annotateurs et administrateurs |
 | **Matériel** | déclarer chaque carte Jetson (identifiant + nom) — une carte non déclarée est refusée par le serveur |
 | **Modèles IA** | publier une nouvelle version du modèle, déployée automatiquement sur toutes les cartes |
-| **Technique** | importer des dossiers d'images, exporter le dataset au format YOLO, surveiller la pré-annotation |
+| **Dataset** | télécharger sur son PC le dataset d'entraînement (ZIP : images, labels YOLO, `data.yaml`) et déposer un ZIP d'images brutes à annoter |
+| **Technique** | importer des dossiers d'images déjà sur le serveur, exporter le dataset dans un dossier du serveur, surveiller la pré-annotation |
 
 Tous les détails (garanties de la base, API, tests, import de l'historique) sont dans
 [`webapp/README.md`](webapp/README.md).
@@ -189,10 +190,13 @@ Deux points importants, détaillés dans la
 ## 5. Faire vivre l'IA (boucle d'amélioration)
 
 1. **Les cartes envoient leurs photos** au serveur : automatiquement à chaque alerte, ou à la
-   demande avec le bouton 0. Elles apparaissent dans des sessions `<jetson-id>_<date>`.
+   demande avec le bouton 0. Elles apparaissent dans des sessions `<jetson-id>_<date>`. Des
+   photos prises autrement (appareil photo, téléphone) se déposent en ZIP depuis l'écran
+   **Dataset** → « Importer des images brutes ».
 2. **Annoter** dans l'interface web (écran **Lots**) : l'IA propose des boîtes, l'annotateur les
    valide, corrige ou rejette.
-3. **Exporter** le dataset au format YOLO (écran **Technique** → Export).
+3. **Exporter** le dataset au format YOLO : écran **Dataset** → « Télécharger le dataset »
+   (un ZIP sur votre PC), ou écran **Technique** → Export (dans un dossier du serveur).
 4. **Ré-entraîner** le modèle avec les outils de [`compost-yolo/`](compost-yolo/README.md) (PC avec
    GPU ou Google Colab) : on obtient un nouveau `best.pt` et son `data.yaml`.
 5. **Publier** cette version dans l'écran **Modèles IA** (nom de version, `.pt`, `data.yaml`,

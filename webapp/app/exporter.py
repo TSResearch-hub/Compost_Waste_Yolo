@@ -28,8 +28,14 @@ Règles :
 - tout-ou-rien : construction dans <sortie>.part puis renommage — un échec
   (fichier de stockage manquant compris) ne laisse RIEN dans la sortie ;
 - lecture seule stricte sur le stockage et la base.
+
+Le calcul de ce qui sort (périmètre, noms, labels, rapport) est séparé de
+l'écriture : `planifier_export` est aussi ce que sert GET /api/dataset/export
+(routers/dataset.py), qui écrit le même contenu dans un ZIP à la volée au
+lieu d'un répertoire — un seul périmètre, quel que soit le canal.
 """
 import csv
+import io
 import os
 import shutil
 from collections import defaultdict
@@ -85,16 +91,43 @@ def _stem_unique(stem: str, session_name: str, taken: set[str]) -> str:
     return candidate
 
 
-def export_yolo(db, storage: Storage, *, output_dir: Path | str,
-                session_names: list[str] | None = None) -> ExportReport:
-    """Exporte une session, plusieurs (par nom), ou tout (None)."""
-    output = Path(output_dir)
-    if output.exists():
-        if not output.is_dir() or any(output.iterdir()):
-            raise ValueError(
-                f"répertoire de sortie non vide : {output} — l'export exige "
-                "un répertoire vide ou inexistant, rien n'a été écrit")
+@dataclass
+class PlanExport:
+    """Ce qu'un export va écrire, calculé en lecture seule (base et
+    référentiel) : partagé par l'export vers un répertoire (`export_yolo`) et
+    le ZIP à la volée (GET /api/dataset/export) — même périmètre, mêmes noms,
+    mêmes labels, même rapport."""
+    # (stem final, nom de fichier final, chemin dans le stockage, session_id,
+    #  boîtes validées [(class_id, x, y, w, h)])
+    entrees: list[tuple[str, str, str, int, list]]
+    noms_classes: tuple[str, ...]
+    # rapport complet, sauf output_dir : posé par celui qui écrit
+    report: ExportReport
 
+
+def contenu_label(lot) -> str:
+    """Fichier de labels YOLO d'une image : non vide, chaque ligne finit par
+    \n (dernière comprise) ; sans boîte, VIDE (0 octet) — un négatif."""
+    return "".join(f"{cid} {x!r} {y!r} {w!r} {h!r}\n" for cid, x, y, w, h in lot)
+
+
+def contenu_groups_csv(entrees) -> str:
+    """groups.csv : stem,group_id — group_id = ID de session, immuable."""
+    buffer = io.StringIO(newline="")
+    writer = csv.writer(buffer)
+    writer.writerow(["stem", "group_id"])
+    writer.writerows((stem, sid) for stem, _f, _r, sid, _l in entrees)
+    return buffer.getvalue()
+
+
+def contenu_classes_txt(noms_classes) -> str:
+    return "".join(f"{n}\n" for n in noms_classes)
+
+
+def planifier_export(db, *, session_names: list[str] | None = None) -> PlanExport:
+    """Périmètre, noms de sortie et labels d'un export d'une session, de
+    plusieurs (par nom) ou de tout (None) — n'écrit rien. ValueError sur
+    session inconnue, aucune session, ou class_id hors référentiel."""
     # ── Sessions sélectionnées ───────────────────────────────────────────────
     rows = db.execute(
         select(CaptureSession.id, CaptureSession.name)
@@ -143,9 +176,9 @@ def export_yolo(db, storage: Storage, *, output_dir: Path | str,
                     "l'annotation ? Export annulé, rien n'a été écrit")
 
     # ── Noms de sortie (collisions inter-sessions) ───────────────────────────
-    plan = []  # (stem final, extension, chemin stockage, session_id, boîtes)
+    plan = []  # (stem final, nom final, chemin stockage, session_id, boîtes)
     taken: set[str] = set()
-    report = ExportReport(output_dir=str(output))
+    report = ExportReport(output_dir="")
     for image_id, session_id, export_filename, cropped, original in images:
         rel = cropped or original
         stem = _stem_unique(Path(export_filename).stem,
@@ -155,39 +188,6 @@ def export_yolo(db, storage: Storage, *, output_dir: Path | str,
         if stem != Path(export_filename).stem:
             report.renamed.append((export_filename, final))
         plan.append((stem, final, rel, session_id, boites[image_id]))
-
-    # ── Écriture tout-ou-rien : <sortie>.part puis bascule ───────────────────
-    part = output.parent / (output.name + ".part")
-    if part.exists():
-        shutil.rmtree(part)  # reste d'un échec précédent : à nous, jetable
-    (part / "images").mkdir(parents=True)
-    (part / "labels").mkdir()
-    try:
-        for stem, final, rel, _sid, lot in plan:
-            try:
-                data = storage.read(rel)
-            except FileNotFoundError:
-                raise ValueError(
-                    f"fichier manquant dans le stockage : {rel} — export "
-                    "annulé, rien n'a été écrit") from None
-            (part / "images" / final).write_bytes(data)
-            # non vide : chaque ligne finit par \n ; vide : 0 octet
-            (part / "labels" / f"{stem}.txt").write_text(
-                "".join(f"{cid} {x!r} {y!r} {w!r} {h!r}\n"
-                        for cid, x, y, w, h in lot),
-                encoding="utf-8")
-        with open(part / "groups.csv", "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["stem", "group_id"])
-            writer.writerows((stem, sid) for stem, _f, _r, sid, _l in plan)
-        (part / "classes.txt").write_text(
-            "".join(f"{n}\n" for n in noms_classes), encoding="utf-8")
-        if output.exists():
-            output.rmdir()  # vide, vérifié en entrée
-        os.replace(part, output)
-    except BaseException:
-        shutil.rmtree(part, ignore_errors=True)
-        raise
 
     # ── Rapport ──────────────────────────────────────────────────────────────
     par_session: dict[int, list[int]] = {sid: [0, 0] for sid in session_ids}
@@ -204,4 +204,49 @@ def export_yolo(db, storage: Storage, *, output_dir: Path | str,
                        for sid, (n_img, n_box) in par_session.items()]
     report.images = len(plan)
     report.boxes = sum(len(lot) for *_x, lot in plan)
+    return PlanExport(entrees=plan, noms_classes=noms_classes, report=report)
+
+
+def export_yolo(db, storage: Storage, *, output_dir: Path | str,
+                session_names: list[str] | None = None) -> ExportReport:
+    """Exporte une session, plusieurs (par nom), ou tout (None) vers un
+    répertoire vide ou inexistant."""
+    output = Path(output_dir)
+    if output.exists():
+        if not output.is_dir() or any(output.iterdir()):
+            raise ValueError(
+                f"répertoire de sortie non vide : {output} — l'export exige "
+                "un répertoire vide ou inexistant, rien n'a été écrit")
+    planifie = planifier_export(db, session_names=session_names)
+    plan, noms_classes, report = (planifie.entrees, planifie.noms_classes,
+                                  planifie.report)
+    report.output_dir = str(output)
+
+    # ── Écriture tout-ou-rien : <sortie>.part puis bascule ───────────────────
+    part = output.parent / (output.name + ".part")
+    if part.exists():
+        shutil.rmtree(part)  # reste d'un échec précédent : à nous, jetable
+    (part / "images").mkdir(parents=True)
+    (part / "labels").mkdir()
+    try:
+        for stem, final, rel, _sid, lot in plan:
+            try:
+                data = storage.read(rel)
+            except FileNotFoundError:
+                raise ValueError(
+                    f"fichier manquant dans le stockage : {rel} — export "
+                    "annulé, rien n'a été écrit") from None
+            (part / "images" / final).write_bytes(data)
+            (part / "labels" / f"{stem}.txt").write_text(
+                contenu_label(lot), encoding="utf-8")
+        (part / "groups.csv").write_text(
+            contenu_groups_csv(plan), encoding="utf-8", newline="")
+        (part / "classes.txt").write_text(
+            contenu_classes_txt(noms_classes), encoding="utf-8")
+        if output.exists():
+            output.rmdir()  # vide, vérifié en entrée
+        os.replace(part, output)
+    except BaseException:
+        shutil.rmtree(part, ignore_errors=True)
+        raise
     return report

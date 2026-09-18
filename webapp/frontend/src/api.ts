@@ -44,6 +44,21 @@ async function appelMultipart<T>(method: string, url: string, form: FormData): P
   return lireReponse<T>(r)
 }
 
+// Un import a un cas à part : un refus « rien d'importable » (409) porte le
+// rapport COMPLET en détail — on le restitue au lieu de le réduire à un
+// message d'erreur. Même lecture pour l'import Technique et le dépôt Dataset.
+async function lireRapportImport(r: Response): Promise<RapportImport> {
+  const donnees = await r.json().catch(() => null)
+  if (r.ok) return donnees as RapportImport
+  if (r.status === 409 && donnees && typeof donnees.detail === "object") {
+    return donnees.detail as RapportImport
+  }
+  throw new ApiError(
+    r.status,
+    donnees && typeof donnees.detail === "string" ? donnees.detail : `${r.status} ${r.statusText}`,
+  )
+}
+
 // ── Formes des réponses (miroir des schémas Pydantic) ───────────────────────
 
 export interface Moi {
@@ -199,6 +214,17 @@ export interface RapportExport {
   renamed: [string, string][]
 }
 
+// ce que GET /api/dataset/export contiendra : même périmètre que l'export
+// Technique (images annotées ou relues, boîtes validées), sans lire le stockage
+export interface ResumeDataset {
+  images: number
+  boxes: number
+  empty_labels: number
+  sessions: { id: number; name: string; images: number; boxes: number }[]
+  class_counts: Record<string, number>
+  renamed: [string, string][]
+}
+
 export interface ImageGaree {
   id: number
   nom: string
@@ -318,26 +344,28 @@ export const api = {
   etatFile: () => appel<EtatFile>("GET", "/api/preannotation/etat"),
   relancerGarees: (imageIds: number[]) =>
     appel<{ relancees: number }>("POST", "/api/preannotation/relancer", { image_ids: imageIds }),
-  // l'import a un cas à part : un refus « rien d'importable » (409) porte le
-  // rapport COMPLET en détail — on le restitue au lieu de le réduire à un
-  // message d'erreur
-  importer: async (corps: ImportParams): Promise<RapportImport> => {
-    const r = await fetch("/api/imports", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(corps),
-    })
-    const donnees = await r.json().catch(() => null)
-    if (r.ok) return donnees as RapportImport
-    if (r.status === 409 && donnees && typeof donnees.detail === "object") {
-      return donnees.detail as RapportImport
-    }
-    throw new ApiError(
-      r.status,
-      donnees && typeof donnees.detail === "string"
-        ? donnees.detail
-        : `${r.status} ${r.statusText}`,
+  importer: async (corps: ImportParams): Promise<RapportImport> =>
+    lireRapportImport(
+      await fetch("/api/imports", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corps),
+      }),
+    ),
+
+  // ── Dataset (administrateur) ──────────────────────────────────────────────
+  resumeDataset: () => appel<ResumeDataset>("GET", "/api/dataset/resume"),
+  // le téléchargement n'est pas un appel fetch : le navigateur suit l'URL
+  // (cookie de session envoyé) et écrit le ZIP sur disque au fil de l'eau —
+  // plusieurs centaines de Mo ne doivent pas transiter par la mémoire de la page
+  exportDatasetUrl: "/api/dataset/export",
+  // ZIP d'images brutes déposé depuis le PC : session « Import_Manuel_Admin »
+  importerDatasetZip: async (archive: File): Promise<RapportImport> => {
+    const form = new FormData()
+    form.append("archive", archive)
+    return lireRapportImport(
+      await fetch("/api/dataset/import", { method: "POST", credentials: "same-origin", body: form }),
     )
   },
 }

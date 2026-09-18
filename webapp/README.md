@@ -526,6 +526,42 @@ serveur** (l'écran pilote, il ne téléverse pas). Trois sections :
   court-circuite la file (endpoint existant). Le worker lui-même n'est PAS
   piloté d'ici : il tourne à part, l'écran observe sa file.
 
+## Écran Dataset — export ZIP et dépôt d'images depuis le PC
+
+Bouton « Dataset » depuis la liste des lots (administrateur). Là où l'écran
+Technique manipule des chemins **côté serveur**, celui-ci fait passer les
+fichiers par le navigateur — pour un administrateur qui n'a pas la main sur
+le VPS :
+
+- **Télécharger le dataset** : `GET /api/dataset/export` construit un ZIP
+  **à la volée** (rien n'est écrit sur le disque du serveur, la mémoire tenue
+  est celle d'une image) : `images/` (les images annotées ou relues, fichier
+  auquel les boîtes se rapportent), `labels/` (un `.txt` YOLO par image,
+  boîtes validées seules, vide pour un négatif), `data.yaml` (le référentiel
+  `DATA_YAML_PATH`, tel quel), plus `groups.csv`, `classes.txt` et un
+  `rapport.txt` — décompressée, l'archive se donne telle quelle à
+  `compost-yolo/scripts/prepare_dataset.py`. Même périmètre et mêmes règles
+  que `POST /api/exports` : les deux passent par `exporter.planifier_export`.
+  Tout ce qui peut échouer (référentiel, `class_id` hors référentiel : 400 ;
+  fichier absent du stockage : 500) est vérifié avant le premier octet. Le
+  téléchargement est une navigation (cookie de session), pas un `fetch` :
+  plusieurs centaines de Mo ne transitent pas par la mémoire de la page.
+  `GET /api/dataset/resume` donne le même rapport sans lire le stockage —
+  l'écran annonce ce que le bouton va télécharger ;
+- **Importer des images brutes** : `POST /api/dataset/import`, multipart,
+  champ `archive` = un ZIP d'images (`.jpg`/`.jpeg`/`.png`). Décompressé à
+  plat dans un dossier temporaire avec les gardes des envois de cartes
+  (plafonds `SYNC_MAX_UPLOAD_MB` / `SYNC_MAX_UNZIPPED_MB` : 413 ; archive
+  illisible ou chemin interdit : 400), puis importé comme un poste de capture
+  (`source_label` = le compte qui dépose) dans la session
+  **`Import_Manuel_Admin`** — créée au premier dépôt (date du jour), rejointe
+  ensuite. Les images entrent dans son lot « import » au statut
+  `en_attente_preannotation` et suivent la file du worker. 201 + rapport
+  d'import ; 409 + rapport si tout est en doublon ; 409 simple si deux dépôts
+  ont créé la session en même temps (réessayer). À savoir : une session = un
+  groupe du split train/val/test (`groups.csv`) — tout ce qui est déposé ici
+  tombe toujours du même côté du split.
+
 ## Import historique (dataset_recolte) — exécution sur ordre uniquement
 
 Depuis l'aplatissement du dossier (2026-08-03 : tout dans `images/` +

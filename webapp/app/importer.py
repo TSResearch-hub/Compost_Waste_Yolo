@@ -38,6 +38,9 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 DEFAULT_BATCH_NAME = "import"
 HISTORICAL_USERNAME = "import_historique"
 SYNC_USERNAME = "sync_jetson"
+# Session qui reçoit les images brutes déposées depuis l'écran « Dataset »
+# (POST /api/dataset/import) : créée au premier dépôt, rejointe ensuite
+SESSION_IMPORT_MANUEL = "Import_Manuel_Admin"
 
 
 @dataclass
@@ -368,6 +371,49 @@ def import_jetson_upload(
         db, storage, source_dirs=[source_dir], admin_id=importer_id,
         name=name, captured_on=captured_on, notes=notes,
         source_label=jetson_id, jetson_id=jetson_id,
+    )
+
+
+# ═══ Dépôt manuel depuis l'écran « Dataset » (routeur dataset) ══════════════
+# Un administrateur téléverse un ZIP d'images brutes depuis son PC ; le
+# routeur le décompresse à plat dans un dossier temporaire et appelle
+# import_manuel_admin. Même mécanique que les envois de cartes : une session
+# fixe (SESSION_IMPORT_MANUEL) créée au premier dépôt, REJOINTE par les
+# suivants, les images dans son lot « import » au statut
+# en_attente_preannotation — elles suivent la file de pré-annotation puis
+# l'annotation comme n'importe quel import. L'administrateur connecté porte
+# created_by/changed_by. Conséquence à connaître : une session = un groupe du
+# split train/val/test (groups.csv) — tout ce qui est déposé ici, quelle que
+# soit la date, tombera toujours du même côté du split.
+
+
+def import_manuel_admin(
+    db,
+    storage: Storage,
+    *,
+    source_dir: Path | str,
+    admin_id: int,
+    source_label: str,
+) -> ImportReport:
+    """Importe le contenu (déjà décompressé, à plat) d'un dépôt manuel dans
+    la session SESSION_IMPORT_MANUEL : créée si absente (date du jour côté
+    serveur — la date de prise de vue est inconnue), rejointe sinon. Les
+    doublons déjà en base sont ignorés ; rapport `aborted` si rien n'est
+    importable. `source_label` : le poste de capture porté par les images
+    (le compte qui dépose, faute de mieux)."""
+    existante = db.scalar(
+        select(CaptureSession.id).where(CaptureSession.name == SESSION_IMPORT_MANUEL))
+    if existante is not None:
+        return import_session_folder(
+            db, storage, source_dirs=[source_dir], admin_id=admin_id,
+            name=SESSION_IMPORT_MANUEL, attach_existing=True,
+            source_label=source_label,
+        )
+    return import_session_folder(
+        db, storage, source_dirs=[source_dir], admin_id=admin_id,
+        name=SESSION_IMPORT_MANUEL, captured_on=date.today(),
+        notes="Images brutes déposées depuis l'écran Dataset (import manuel).",
+        source_label=source_label,
     )
 
 

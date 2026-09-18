@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .routers import (auth, batches, exports, images, imports, jetsons,
-                      models_ia, preannotation, sessions, sync, users)
+from .routers import (auth, batches, dataset, exports, images, imports,
+                      jetsons, models_ia, preannotation, sessions, sync, users)
 
 # Build du front (webapp/frontend, `npm run build`) — servi par le même
 # process, même origine : le cookie de session suffit, pas de CORS.
@@ -29,6 +29,9 @@ def create_app() -> FastAPI:
     # Distribution des poids du modèle IA : publication par un administrateur,
     # récupération par les cartes avec le même jeton (voir routers/models_ia.py)
     app.include_router(models_ia.router)
+    # Écran Dataset : export YOLO en ZIP à la volée et dépôt d'images brutes
+    # depuis le PC de l'administrateur (voir routers/dataset.py)
+    app.include_router(dataset.router)
 
     @app.get("/api/health", tags=["meta"])
     def health():
