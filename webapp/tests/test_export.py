@@ -156,14 +156,46 @@ def test_sortie_non_vide_refusee(db, engine, base_ids, tmp_path):
     assert (sortie / "quelque_chose.txt").read_text() == "occupé"  # intact
 
 
-def test_fichier_stockage_manquant_annule_tout(db, engine, base_ids, tmp_path):
+def test_fichier_stockage_manquant_ignore_et_compte(db, engine, base_ids, tmp_path):
+    """Un fichier absent du stockage (image ou crop) n'annule plus l'export :
+    l'image est écartée, comptée dans le rapport, le reste sort normalement."""
     image_annotee(engine, base_ids, "ok.jpg")
     insert_image(engine, base_ids, "e" * 64, "p/fantome.jpg", status="annotee")
+    # crop référencé mais absent : même traitement, l'original n'est PAS un repli
+    image_annotee(engine, base_ids, "recadree.jpg", cropped_path="p/crop_absent.jpg",
+                  crop_x=0, crop_y=0, cropped_width=40, cropped_height=30)
 
+    sortie = tmp_path / "export"
+    report = faire_export(db, sortie)
+
+    assert report.fichiers_manquants == 2
+    assert report.images == 1 and report.boxes == 1
+    assert (base_ids["s1"], "s1", 1, 1) in report.sessions
+    assert sorted(p.name for p in (sortie / "images").iterdir()) == ["ok.jpg"]
+    assert sorted(p.stem for p in (sortie / "labels").iterdir()) == ["ok"]
+    assert (sortie / "groups.csv").read_text().splitlines()[1:] == [f"ok,{base_ids['s1']}"]
+    assert "images ignorées, fichier absent du stockage : 2" in report.summary()
+
+
+def test_fichier_disparu_pendant_l_ecriture_annule_tout(db, engine, base_ids,
+                                                       tmp_path, monkeypatch):
+    """Entre la planification et l'écriture, le fichier disparaît : l'export
+    reste tout-ou-rien — une archive différente de son rapport ne sort pas."""
+    from app import exporter
+
+    image_annotee(engine, base_ids, "ok.jpg")
+    image_annotee(engine, base_ids, "volatile.jpg")
+    planifier = exporter.planifier_export
+
+    def planifier_puis_effacer(db_, storage, **kw):
+        plan = planifier(db_, storage, **kw)
+        (STORAGE_TEST_ROOT / "p" / "volatile.jpg").unlink()
+        return plan
+
+    monkeypatch.setattr(exporter, "planifier_export", planifier_puis_effacer)
     sortie = tmp_path / "export"
     with pytest.raises(ValueError, match="fichier manquant"):
         faire_export(db, sortie)
-    # tout-ou-rien : même l'image valide n'a pas été écrite
     assert not sortie.exists() and not (tmp_path / "export.part").exists()
 
 

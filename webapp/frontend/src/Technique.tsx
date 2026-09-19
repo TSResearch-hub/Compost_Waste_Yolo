@@ -355,6 +355,12 @@ export default function Technique({ onRetour, surErreurAuth }: Props) {
             boîtes, {rapportExport.empty_labels} fichier(s) de labels vides (négatifs), vers{" "}
             <code>{rapportExport.output_dir}</code>.
           </p>
+          {rapportExport.fichiers_manquants > 0 && (
+            <p className="texte-erreur">
+              {rapportExport.fichiers_manquants} image(s) annotée(s) ignorée(s) : fichier absent du
+              stockage.
+            </p>
+          )}
           <h3>Répartition par classe</h3>
           <ul className="liste-rapport">
             {Object.entries(rapportExport.class_counts).map(([classe, n]) => (

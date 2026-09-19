@@ -25,8 +25,11 @@ Règles :
 - collision de stem entre sessions : préfixe « nom-de-session__ » uniquement
   en collision réelle, renommages listés au rapport ;
 - class_id hors référentiel data.yaml : échec explicite, jamais de label faux ;
+- fichier absent du stockage (image ou crop) : l'image est IGNORÉE, comptée
+  dans `fichiers_manquants` du rapport — un stockage abîmé ne doit pas priver
+  l'entraînement de tout le reste (tolérance décidée le 2026-09-19) ;
 - tout-ou-rien : construction dans <sortie>.part puis renommage — un échec
-  (fichier de stockage manquant compris) ne laisse RIEN dans la sortie ;
+  d'écriture ne laisse RIEN dans la sortie ;
 - lecture seule stricte sur le stockage et la base.
 
 Le calcul de ce qui sort (périmètre, noms, labels, rapport) est séparé de
@@ -60,11 +63,14 @@ class ExportReport:
     empty_labels: int = 0
     class_counts: dict[str, int] = field(default_factory=dict)
     renamed: list[tuple[str, str]] = field(default_factory=list)
+    # images exportables dont le fichier est absent du stockage : ignorées
+    fichiers_manquants: int = 0
 
     def summary(self) -> str:
         lines = [
             f"Export YOLO : {self.images} image(s), {self.boxes} boîte(s) "
             f"validée(s), {self.empty_labels} label(s) vide(s) → {self.output_dir}",
+            f"  images ignorées, fichier absent du stockage : {self.fichiers_manquants}",
             f"  sessions couvertes : {len(self.sessions)}",
         ]
         lines.extend(
@@ -124,10 +130,13 @@ def contenu_classes_txt(noms_classes) -> str:
     return "".join(f"{n}\n" for n in noms_classes)
 
 
-def planifier_export(db, *, session_names: list[str] | None = None) -> PlanExport:
+def planifier_export(db, storage: Storage, *,
+                     session_names: list[str] | None = None) -> PlanExport:
     """Périmètre, noms de sortie et labels d'un export d'une session, de
-    plusieurs (par nom) ou de tout (None) — n'écrit rien. ValueError sur
-    session inconnue, aucune session, ou class_id hors référentiel."""
+    plusieurs (par nom) ou de tout (None) — n'écrit rien. Une image dont le
+    fichier est absent du stockage est écartée et comptée
+    (`report.fichiers_manquants`). ValueError sur session inconnue, aucune
+    session, ou class_id hors référentiel."""
     # ── Sessions sélectionnées ───────────────────────────────────────────────
     rows = db.execute(
         select(CaptureSession.id, CaptureSession.name)
@@ -181,6 +190,11 @@ def planifier_export(db, *, session_names: list[str] | None = None) -> PlanExpor
     report = ExportReport(output_dir="")
     for image_id, session_id, export_filename, cropped, original in images:
         rel = cropped or original
+        if not storage.exists(rel):
+            # stockage abîmé (fichier effacé, restauration partielle) : on
+            # exporte le reste plutôt que rien, le rapport le dit
+            report.fichiers_manquants += 1
+            continue
         stem = _stem_unique(Path(export_filename).stem,
                             nom_de[session_id], taken)
         taken.add(stem)
@@ -217,7 +231,7 @@ def export_yolo(db, storage: Storage, *, output_dir: Path | str,
             raise ValueError(
                 f"répertoire de sortie non vide : {output} — l'export exige "
                 "un répertoire vide ou inexistant, rien n'a été écrit")
-    planifie = planifier_export(db, session_names=session_names)
+    planifie = planifier_export(db, storage, session_names=session_names)
     plan, noms_classes, report = (planifie.entrees, planifie.noms_classes,
                                   planifie.report)
     report.output_dir = str(output)
@@ -233,6 +247,9 @@ def export_yolo(db, storage: Storage, *, output_dir: Path | str,
             try:
                 data = storage.read(rel)
             except FileNotFoundError:
+                # disparu entre la planification et l'écriture : l'export
+                # reste tout-ou-rien, on le dit plutôt que de sortir une
+                # archive différente de son rapport
                 raise ValueError(
                     f"fichier manquant dans le stockage : {rel} — export "
                     "annulé, rien n'a été écrit") from None

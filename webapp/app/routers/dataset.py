@@ -20,13 +20,16 @@ tenue est celle d'une image) :
                   d'autre qu'un téléchargement
 
 Même périmètre et mêmes règles que POST /api/exports : c'est `planifier_export`
-(exporter.py) qui décide de ce qui sort, dans les deux cas. Tout ce qui peut
-échouer (référentiel, class_id hors référentiel, fichier absent du stockage)
-est vérifié AVANT le premier octet envoyé : un début de téléchargement est
-un téléchargement complet, sauf incident disque.
+(exporter.py) qui décide de ce qui sort, dans les deux cas — une image dont
+le fichier est absent du stockage est ignorée et comptée
+(`fichiers_manquants`, dans rapport.txt), l'export reste complet pour le
+reste. Ce qui peut échouer (référentiel, class_id hors référentiel : 400) est
+vérifié AVANT le premier octet envoyé : un début de téléchargement est un
+téléchargement complet, sauf incident disque.
 
-GET /api/dataset/resume — le même rapport, sans rien lire du stockage : pour
-que l'écran annonce ce que le bouton va télécharger.
+GET /api/dataset/resume — le même rapport, sans lire le contenu des fichiers
+(seule leur existence est vérifiée) : pour que l'écran annonce ce que le
+bouton va télécharger, images ignorées comprises.
 
 POST /api/dataset/import — formulaire multipart, champ `archive` : un ZIP
 d'images brutes (.jpg/.jpeg/.png), décompressé à plat dans un dossier
@@ -81,6 +84,8 @@ class ResumeDatasetOut(BaseModel):
     sessions: list[SessionStatOut]
     class_counts: dict[str, int]
     renamed: list[tuple[str, str]]
+    # images exportables ignorées, fichier absent du stockage
+    fichiers_manquants: int
 
 
 def _resume(plan: PlanExport) -> ResumeDatasetOut:
@@ -90,12 +95,13 @@ def _resume(plan: PlanExport) -> ResumeDatasetOut:
         sessions=[SessionStatOut(id=s[0], name=s[1], images=s[2], boxes=s[3])
                   for s in r.sessions],
         class_counts=r.class_counts, renamed=r.renamed,
+        fichiers_manquants=r.fichiers_manquants,
     )
 
 
-def _planifier(db) -> PlanExport:
+def _planifier(db, storage: Storage) -> PlanExport:
     try:
-        return planifier_export(db)
+        return planifier_export(db, storage)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -162,26 +168,18 @@ def _flux_zip(plan: PlanExport, storage: Storage, data_yaml: bytes) -> Iterator[
 
 @router.get("/resume", response_model=ResumeDatasetOut)
 def resume(db=Depends(get_db)):
-    """Ce que l'export contiendrait, sans lire le stockage."""
+    """Ce que l'export contiendrait, sans lire le contenu du stockage."""
     if db.scalar(select(func.count()).select_from(CaptureSession)) == 0:
         # base vierge : rien à annoncer, ce n'est pas une erreur
         return ResumeDatasetOut(images=0, boxes=0, empty_labels=0, sessions=[],
-                                class_counts={}, renamed=[])
-    return _resume(_planifier(db))
+                                class_counts={}, renamed=[], fichiers_manquants=0)
+    return _resume(_planifier(db, get_storage()))
 
 
 @router.get("/export")
 def export(db=Depends(get_db)):
-    plan = _planifier(db)
     storage = get_storage()
-    # Vérifié avant le premier octet : un fichier absent du stockage doit
-    # donner une erreur HTTP, pas une archive tronquée sans explication
-    absents = [rel for _s, _f, rel, _sid, _l in plan.entrees if not storage.exists(rel)]
-    if absents:
-        raise HTTPException(
-            status_code=500,
-            detail=f"{len(absents)} fichier(s) absent(s) du stockage, "
-                   f"dont {absents[0]} — export annulé, rien n'a été envoyé")
+    plan = _planifier(db, storage)
     try:
         data_yaml = Path(get_settings().data_yaml_path).read_bytes()
     except OSError as exc:

@@ -516,7 +516,8 @@ serveur** (l'écran pilote, il ne téléverse pas). Trois sections :
   L'écran rappelle que plusieurs postes simultanés forment UNE session ;
 - **Export YOLO** : sélection des sessions (ou tout), répertoire de sortie,
   `POST /api/exports` ; rapport : images, boîtes, fichiers de labels vides
-  (négatifs), répartition par classe, sessions couvertes, renommages ;
+  (négatifs), répartition par classe, sessions couvertes, renommages, images
+  ignorées faute de fichier dans le stockage (`fichiers_manquants`) ;
 - **Pré-annotation** : `GET /api/preannotation/etat` — images en attente
   (que le worker prendra) et images **garées** (au plafond de tentatives)
   avec leur motif ; `POST /api/preannotation/relancer` remet le compteur de
@@ -541,13 +542,17 @@ le VPS :
   `DATA_YAML_PATH`, tel quel), plus `groups.csv`, `classes.txt` et un
   `rapport.txt` — décompressée, l'archive se donne telle quelle à
   `compost-yolo/scripts/prepare_dataset.py`. Même périmètre et mêmes règles
-  que `POST /api/exports` : les deux passent par `exporter.planifier_export`.
-  Tout ce qui peut échouer (référentiel, `class_id` hors référentiel : 400 ;
-  fichier absent du stockage : 500) est vérifié avant le premier octet. Le
-  téléchargement est une navigation (cookie de session), pas un `fetch` :
-  plusieurs centaines de Mo ne transitent pas par la mémoire de la page.
-  `GET /api/dataset/resume` donne le même rapport sans lire le stockage —
-  l'écran annonce ce que le bouton va télécharger ;
+  que `POST /api/exports` : les deux passent par `exporter.planifier_export`
+  — une image annotée dont le fichier est **absent du stockage** est
+  ignorée et comptée (`fichiers_manquants`, dans le rapport et
+  `rapport.txt`), l'export sort quand même (tolérance décidée le
+  2026-09-19 : un stockage abîmé ne prive pas l'entraînement du reste). Ce
+  qui peut échouer (référentiel, `class_id` hors référentiel : 400) est
+  vérifié avant le premier octet. Le téléchargement est une navigation
+  (cookie de session), pas un `fetch` : plusieurs centaines de Mo ne
+  transitent pas par la mémoire de la page. `GET /api/dataset/resume` donne
+  le même rapport sans lire le contenu des fichiers — l'écran annonce ce que
+  le bouton va télécharger, images ignorées comprises ;
 - **Importer des images brutes** : `POST /api/dataset/import`, multipart,
   champ `archive` = un ZIP d'images (`.jpg`/`.jpeg`/`.png`). Décompressé à
   plat dans un dossier temporaire avec les gardes des envois de cartes

@@ -161,6 +161,17 @@ export default function Dataset({ moi, onRetour, surErreurAuth }: Props) {
                 ({classesRenseignees.map(([classe, n]) => `${classe} : ${n}`).join(", ")})
               </span>
             )}
+            {resume.fichiers_manquants > 0 && (
+              <>
+                <br />
+                <span className="texte-erreur">
+                  {resume.fichiers_manquants} image{resume.fichiers_manquants > 1 ? "s" : ""}{" "}
+                  annotée{resume.fichiers_manquants > 1 ? "s" : ""} dont le fichier est absent du
+                  stockage : ignorée{resume.fichiers_manquants > 1 ? "s" : ""} (voir{" "}
+                  <code>rapport.txt</code> dans l'archive).
+                </span>
+              </>
+            )}
           </p>
         )}
         <button

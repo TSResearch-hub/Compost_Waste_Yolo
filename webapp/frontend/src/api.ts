@@ -212,6 +212,8 @@ export interface RapportExport {
   sessions: { id: number; name: string; images: number; boxes: number }[]
   class_counts: Record<string, number>
   renamed: [string, string][]
+  // images annotées écartées : fichier absent du stockage (l'export continue)
+  fichiers_manquants: number
 }
 
 // ce que GET /api/dataset/export contiendra : même périmètre que l'export
@@ -223,6 +225,7 @@ export interface ResumeDataset {
   sessions: { id: number; name: string; images: number; boxes: number }[]
   class_counts: Record<string, number>
   renamed: [string, string][]
+  fichiers_manquants: number
 }
 
 export interface ImageGaree {

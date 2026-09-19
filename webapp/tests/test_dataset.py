@@ -93,22 +93,37 @@ def test_export_zip_nominal(make_client, comptes, engine, base_ids):
     lignes = zf.read("groups.csv").decode().splitlines()
     assert lignes[0] == "stem,group_id"
     assert set(lignes[1:]) == {f"avec,{base_ids['s1']}", f"sans,{base_ids['s1']}"}
-    assert "2 image(s), 2 boîte(s)" in zf.read("rapport.txt").decode()
+    rapport = zf.read("rapport.txt").decode()
+    assert "2 image(s), 2 boîte(s)" in rapport
+    assert "images ignorées, fichier absent du stockage : 0" in rapport
+    assert resume.json()["fichiers_manquants"] == 0
     # rien n'a été écrit côté serveur
     assert not any(p.name.endswith(".part") for p in STORAGE_TEST_ROOT.rglob("*"))
 
 
-def test_export_fichier_absent_refuse_avant_le_premier_octet(make_client, comptes,
-                                                             engine, base_ids):
+def test_export_fichier_absent_ignore_et_compte(make_client, comptes, engine,
+                                                base_ids):
+    """Un fichier absent du stockage n'empêche plus le téléchargement : l'image
+    est écartée, l'archive est complète pour le reste et rapport.txt le dit."""
     image_annotee(engine, base_ids, "ok.jpg")
     image_annotee(engine, base_ids, "fantome.jpg")
     (STORAGE_TEST_ROOT / "p" / "fantome.jpg").unlink()
     root = login(make_client(), "root")
+
+    resume = root.get("/api/dataset/resume").json()
+    assert resume["images"] == 1 and resume["fichiers_manquants"] == 1
+
     r = exporter(root)
-    assert r.status_code == 500
-    assert "p/fantome.jpg" in r.json()["detail"]
-    # le résumé, lui, ne lit pas le stockage : il reste disponible
-    assert root.get("/api/dataset/resume").json()["images"] == 2
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/zip"
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    assert zf.testzip() is None
+    assert set(zf.namelist()) == {"images/ok.jpg", "labels/ok.txt", "data.yaml",
+                                  "groups.csv", "classes.txt", "rapport.txt"}
+    rapport = zf.read("rapport.txt").decode()
+    assert "1 image(s), 1 boîte(s)" in rapport
+    assert "images ignorées, fichier absent du stockage : 1" in rapport
+    assert zf.read("groups.csv").decode().splitlines()[1:] == [f"ok,{base_ids['s1']}"]
 
 
 def test_export_class_id_hors_referentiel_refuse(make_client, comptes, engine,
@@ -127,7 +142,8 @@ def test_resume_base_vierge(make_client, comptes):
     r = login(make_client(), "root").get("/api/dataset/resume")
     assert r.status_code == 200
     assert r.json() == {"images": 0, "boxes": 0, "empty_labels": 0,
-                        "sessions": [], "class_counts": {}, "renamed": []}
+                        "sessions": [], "class_counts": {}, "renamed": [],
+                        "fichiers_manquants": 0}
 
 
 # ── Import ───────────────────────────────────────────────────────────────────

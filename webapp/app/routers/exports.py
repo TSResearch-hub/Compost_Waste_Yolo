@@ -35,6 +35,8 @@ class ExportReportOut(BaseModel):
     sessions: list[SessionStatOut]
     class_counts: dict[str, int]
     renamed: list[tuple[str, str]]
+    # images exportables ignorées, fichier absent du stockage
+    fichiers_manquants: int
 
 
 @router.post("", response_model=ExportReportOut, status_code=201)
@@ -54,4 +56,5 @@ def create_export(
         sessions=[SessionStatOut(id=s[0], name=s[1], images=s[2], boxes=s[3])
                   for s in report.sessions],
         class_counts=report.class_counts, renamed=report.renamed,
+        fichiers_manquants=report.fichiers_manquants,
     )
